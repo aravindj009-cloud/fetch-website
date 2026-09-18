@@ -22,6 +22,16 @@ function App() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const demoRef = useRef(null);
+  const [videoPlaying, setVideoPlaying] = useState(true);
+  const [videoScene, setVideoScene] = useState(0);
+
+  const videoScenes = [
+    { kicker: "01 — YOU ASK", title: "Tell Fetch what you need.", copy: "A simple request in your own words becomes the starting point.", label: "CUSTOMER" },
+    { kicker: "02 — FETCH ATC", title: "Fetch understands the task.", copy: "Intent becomes a task. The ATC layer finds the resources needed to execute it.", label: "ATC" },
+    { kicker: "03 — STORE CONFIRMS", title: "The right resource responds.", copy: "A nearby partner store confirms availability and provides the product price.", label: "PARTNER STORE" },
+    { kicker: "04 — SHOPPER ASSIGNED", title: "Fetch coordinates execution.", copy: "A nearby shopper accepts the job, collects the item and takes it to the customer.", label: "SHOPPER" },
+    { kicker: "05 — DELIVERED", title: "The task gets done.", copy: "The customer receives the order while Fetch keeps the whole process coordinated.", label: "COMPLETED" },
+  ];
 
   useEffect(() => {
     const id = setInterval(
@@ -31,6 +41,20 @@ function App() {
 
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!videoPlaying) return;
+    const id = setInterval(() => {
+      setVideoScene((v) => (v + 1) % videoScenes.length);
+    }, 4200);
+    return () => clearInterval(id);
+  }, [videoPlaying]);
+
+  const toggleVideo = () => setVideoPlaying((v) => !v);
+  const restartVideo = () => {
+    setVideoScene(0);
+    setVideoPlaying(true);
+  };
 
   const scrollTo = (id) =>
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
@@ -92,7 +116,7 @@ function App() {
         </button>
 
         <div className="navLinks">
-          <button onClick={() => scrollTo("how")}>
+          <button onClick={() => scrollTo("how-fetch-works")}>
             How it works
           </button>
 
@@ -140,7 +164,7 @@ function App() {
 
             <button
               className="secondary"
-              onClick={() => scrollTo("demo")}
+              onClick={() => scrollTo("how-fetch-works")}
             >
               See how it works <span>↓</span>
             </button>
@@ -207,6 +231,92 @@ function App() {
             <div className="floatTag tagA">UNDERSTAND</div>
             <div className="floatTag tagB">ACT</div>
             <div className="floatTag tagC">DONE</div>
+          </div>
+        </section>
+
+        <section className="fetchVideoSection" id="how-fetch-works">
+          <div className="fetchVideoHeader">
+            <div>
+              <div className="sectionLabel">SEE FETCH IN ACTION</div>
+              <h2>One request.<br /><em>A real-world response.</em></h2>
+            </div>
+            <p>Watch the journey from a simple request to a completed real-world task.</p>
+          </div>
+
+          <div className={`fetchVideo ${videoPlaying ? "isPlaying" : "isPaused"}`}>
+            <div className="videoChrome">
+              <div className="videoChromeLeft"><span className="videoDot"></span><span>FETCH / PRODUCT DEMO</span></div>
+              <div className="videoTime">0:{String(Math.min(59, videoScene * 12)).padStart(2, "0")} / 0:60</div>
+            </div>
+
+            <div className="videoStage">
+              <div className="videoGrid"></div>
+              <div className="videoGlow"></div>
+
+              <div className="videoFlowLine">
+                {videoScenes.map((_, i) => (
+                  <React.Fragment key={i}>
+                    <span className={videoScene >= i ? "active" : ""}></span>
+                    {i < videoScenes.length - 1 && <i></i>}
+                  </React.Fragment>
+                ))}
+              </div>
+
+              <div className="videoSceneCopy">
+                <div className="videoKicker">{videoScenes[videoScene].kicker}</div>
+                <h3>{videoScenes[videoScene].title}</h3>
+                <p>{videoScenes[videoScene].copy}</p>
+              </div>
+              <div className="videoSceneLabel">{videoScenes[videoScene].label}</div>
+
+              <div className="videoMockArea">
+                {videoScene === 0 && <div className="mockPhone">
+                  <div className="mockPhoneTop"><span>‹</span><strong>FETCH</strong><small>online</small></div>
+                  <div className="mockChat">
+                    <div className="chatBubble customer">Get me 2 KitKats from a nearby store.<small>10:24 AM ✓✓</small></div>
+                    <div className="chatBubble fetch"><strong>Fetch</strong>Got it. I’m finding the best way to get this done.<small>10:24 AM</small></div>
+                  </div>
+                  <div className="mockInput">Tell Fetch what you need… <b>↑</b></div>
+                </div>}
+
+                {videoScene === 1 && <div className="atcConsole">
+                  <div className="atcLogo">F<span>.</span></div>
+                  <div className="atcTitle"><strong>FETCH ATC</strong><small>REAL-WORLD TASK ORCHESTRATION</small></div>
+                  <div className="atcNodes">
+                    <div className="atcNode done"><span>01</span><b>INTENT</b><em>✓</em></div><div className="atcConnector"></div>
+                    <div className="atcNode done"><span>02</span><b>TASK</b><em>✓</em></div><div className="atcConnector"></div>
+                    <div className="atcNode active"><span>03</span><b>RESOURCE DISCOVERY</b><em>↗</em></div><div className="atcConnector"></div>
+                    <div className="atcNode"><span>04</span><b>MATCHING</b><em>○</em></div>
+                  </div>
+                  <div className="atcStatus"><span></span> Finding the right resource…</div>
+                </div>}
+
+                {videoScene === 2 && <div className="storeMock">
+                  <div className="storeHeader"><div className="storeAvatar">S</div><div><strong>FETCH</strong><small>Partner Store</small></div><span>●</span></div>
+                  <div className="storeBody"><small>NEW FETCH ORDER</small><h4>2 × KitKat</h4><p>Please confirm availability.</p><div className="choiceButtons"><button>AVAILABLE</button><button>UNAVAILABLE</button></div></div>
+                  <div className="storeAccepted">✓ Availability confirmed</div>
+                </div>}
+
+                {videoScene === 3 && <div className="shopperMock">
+                  <div className="mapCard"><div className="mapLines"></div><div className="mapPin storePin">S</div><div className="mapPin customerPin">C</div><div className="route"></div></div>
+                  <div className="jobCard"><div className="jobTop"><span>FETCH SHOPPER</span><b>NEW JOB</b></div><h4>Collect & deliver</h4><p><strong>Collect:</strong> Partner Store</p><p><strong>Deliver:</strong> Customer</p><div className="jobMeta"><span>2.2 km</span><span>Delivery fee ₹22</span></div><button>ACCEPT <span>→</span></button></div>
+                </div>}
+
+                {videoScene === 4 && <div className="deliveredMock">
+                  <div className="deliveredCircle">✓</div><div className="deliveredWord">DELIVERED</div><p>Your real-world task is complete.</p>
+                  <div className="deliverySteps"><span>Accepted</span><i>→</i><span>Picked up</span><i>→</i><span>Delivered</span></div>
+                </div>}
+              </div>
+            </div>
+
+            <div className="videoControls">
+              <button className="videoControl" onClick={toggleVideo} aria-label={videoPlaying ? "Pause demo" : "Play demo"}>{videoPlaying ? "Ⅱ" : "▶"}</button>
+              <button className="videoControl replay" onClick={restartVideo} aria-label="Restart demo">↻</button>
+              <div className="videoProgress"><div className="videoProgressTrack"><span style={{width:`${((videoScene+1)/videoScenes.length)*100}%`}}></span></div>
+                <div className="videoProgressSteps">{videoScenes.map((scene,i)=><button key={scene.kicker} className={i===videoScene?"current":i<videoScene?"visited":""} onClick={()=>{setVideoScene(i);setVideoPlaying(true)}} aria-label={`Go to ${scene.label}`}></button>)}</div>
+              </div>
+              <span className="videoControlLabel">{videoPlaying ? "PLAYING" : "PAUSED"}</span>
+            </div>
           </div>
         </section>
 
@@ -443,7 +553,7 @@ function App() {
           </div>
 
           <div className="footerLinks">
-            <button onClick={() => scrollTo("how")}>
+            <button onClick={() => scrollTo("how-fetch-works")}>
               How it works
             </button>
 
