@@ -1,0 +1,312 @@
+const clean = (value) => String(value ?? "").trim();
+
+function detectIntent(text) {
+  const t = text.toLowerCase();
+
+  if (
+    /\b(get|buy|bring|deliver|pick up|purchase|order)\b/.test(t) &&
+    /\b(milk|bread|kitkat|kit kat|groceries|grocery|food|water|snack|coke|coca cola|pepsi)\b/.test(t)
+  ) {
+    return { intent: "physical_purchase", confidence: 0.94 };
+  }
+
+  if (
+    /\b(restaurant|dinner|lunch|table|reservation|book a table)\b/.test(t)
+  ) {
+    return { intent: "restaurant_reservation", confidence: 0.90 };
+  }
+
+  if (
+    /\b(flight|fly|airline|ticket|bangalore|bengaluru|mumbai|delhi|chennai|hyderabad)\b/.test(t)
+  ) {
+    return { intent: "travel_search", confidence: 0.86 };
+  }
+
+  if (
+    /\b(research|find out|search|latest|news|what happened|look up)\b/.test(t)
+  ) {
+    return { intent: "digital_research", confidence: 0.91 };
+  }
+
+  if (
+    /\b(remind|remember|don't forget|tomorrow|later)\b/.test(t)
+  ) {
+    return { intent: "reminder", confidence: 0.88 };
+  }
+
+  if (/\b(call|phone|ring)\b/.test(t)) {
+    return { intent: "phone_call", confidence: 0.84 };
+  }
+
+  return { intent: "general_assistance", confidence: 0.60 };
+}
+
+function extractItems(text) {
+  const items = [];
+  const patterns = [
+    { name: "KitKat", pattern: /(\d+)?\s*(kitkat|kit kat)/i },
+    { name: "Milk", pattern: /(\d+)?\s*(milk)/i },
+    { name: "Bread", pattern: /(\d+)?\s*(bread)/i },
+    { name: "Coke", pattern: /(\d+)?\s*(coke|coca cola)/i },
+    { name: "Water", pattern: /(\d+)?\s*(water)/i }
+  ];
+
+  for (const item of patterns) {
+    const match = text.match(item.pattern);
+    if (match) {
+      items.push({
+        name: item.name,
+        quantity: Number(match[1] || 1)
+      });
+    }
+  }
+
+  return items;
+}
+
+function buildPlan(intent) {
+  const plans = {
+    physical_purchase: {
+      capability: "physical",
+      network: "physical_execution",
+      steps: [
+        "understand_request",
+        "identify_items",
+        "find_fulfilment",
+        "confirm_price",
+        "request_customer_approval",
+        "execute_delivery"
+      ]
+    },
+    digital_research: {
+      capability: "digital",
+      network: "web_research",
+      steps: [
+        "understand_request",
+        "research",
+        "summarize",
+        "return_result"
+      ]
+    },
+    restaurant_reservation: {
+      capability: "digital",
+      network: "reservation",
+      steps: [
+        "understand_request",
+        "find_restaurants",
+        "check_availability",
+        "request_confirmation",
+        "reserve"
+      ]
+    },
+    travel_search: {
+      capability: "digital",
+      network: "travel",
+      steps: [
+        "understand_request",
+        "search_options",
+        "present_options",
+        "request_confirmation",
+        "book"
+      ]
+    },
+    phone_call: {
+      capability: "human",
+      network: "phone",
+      steps: [
+        "understand_request",
+        "identify_recipient",
+        "prepare_call",
+        "request_confirmation",
+        "call"
+      ]
+    },
+    reminder: {
+      capability: "digital",
+      network: "automation",
+      steps: [
+        "understand_request",
+        "create_reminder",
+        "confirm"
+      ]
+    }
+  };
+
+  return plans[intent] || {
+    capability: "assistant",
+    network: "general",
+    steps: [
+      "understand_request",
+      "determine_capability",
+      "respond"
+    ]
+  };
+}
+
+function buildPhysicalQuote(items) {
+  const prices = {
+    KitKat: 40,
+    Milk: 65,
+    Bread: 45,
+    Coke: 40,
+    Water: 25
+  };
+
+  const lines = items.map((item) => ({
+    name: item.name,
+    quantity: item.quantity,
+    unit_price: prices[item.name] || 50,
+    total: (prices[item.name] || 50) * item.quantity
+  }));
+
+  const subtotal = lines.reduce(
+    (sum, item) => sum + item.total,
+    0
+  );
+
+  const fetchFee = 20;
+
+  return {
+    items: lines,
+    subtotal,
+    fetchFee,
+    deliveryFee: 0,
+    total: subtotal + fetchFee,
+    currency: "INR"
+  };
+}
+
+export async function executeUniversalFetchRequest({
+  text,
+  customerId = null,
+  conversationId = null,
+  channel = "web",
+  activeTaskId = null
+}) {
+  const requestText = clean(text);
+
+  const detected = detectIntent(requestText);
+  const items = extractItems(requestText);
+  const plan = buildPlan(detected.intent);
+
+  let execution;
+
+  if (detected.intent === "physical_purchase") {
+    if (!items.length) {
+      execution = {
+        status: "needs_clarification",
+        message: "What would you like me to get for you?",
+        success: false,
+        side_effect: false,
+        execution_type: "physical_purchase"
+      };
+    } else {
+      const quote = buildPhysicalQuote(items);
+
+      execution = {
+        status: "awaiting_physical_order",
+        message:
+          "I found the physical fulfilment path. I’m checking the best way to get that to you.",
+        success: true,
+        side_effect: false,
+        execution_type: "physical_purchase",
+        quote
+      };
+    }
+  } else if (detected.intent === "digital_research") {
+    execution = {
+      status: "resource_matched",
+      message:
+        "I understand. I’ll use the digital research path for that.",
+      success: true,
+      side_effect: false,
+      execution_type: "digital_research"
+    };
+  } else if (detected.intent === "restaurant_reservation") {
+    execution = {
+      status: "resource_matched",
+      message:
+        "I understand. I’ll use the reservation path for that.",
+      success: true,
+      side_effect: false,
+      execution_type: "reservation"
+    };
+  } else if (detected.intent === "travel_search") {
+    execution = {
+      status: "resource_matched",
+      message:
+        "I understand. I’ll use the travel path for that.",
+      success: true,
+      side_effect: false,
+      execution_type: "travel"
+    };
+  } else if (detected.intent === "phone_call") {
+    execution = {
+      status: "resource_matched",
+      message:
+        "I understand. I’ll prepare the phone execution path.",
+      success: true,
+      side_effect: false,
+      execution_type: "phone"
+    };
+  } else if (detected.intent === "reminder") {
+    execution = {
+      status: "resource_matched",
+      message:
+        "I understand this as a reminder task.",
+      success: true,
+      side_effect: false,
+      execution_type: "automation"
+    };
+  } else {
+    execution = {
+      status: "needs_clarification",
+      message:
+        "Tell me what you’d like me to get done, and I’ll work out the best way.",
+      success: false,
+      side_effect: false,
+      execution_type: "assistant"
+    };
+  }
+
+  return {
+    success: true,
+    status: execution.status,
+
+    workflow_id:
+      activeTaskId ||
+      `fetch_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+
+    fetch: {
+      decisions: [
+        {
+          intent: detected.intent,
+          confidence: detected.confidence,
+          entities: {
+            items,
+            customerId,
+            conversationId,
+            channel
+          },
+          plan
+        }
+      ]
+    },
+
+    atc: {
+      status:
+        detected.intent === "physical_purchase"
+          ? "partner_matching"
+          : "resource_matched",
+      network: plan.network,
+      resource_type: plan.capability,
+      reason:
+        "ATC selected the appropriate execution network.",
+      distance_km: null
+    },
+
+    execution
+  };
+}
