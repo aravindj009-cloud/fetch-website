@@ -151,13 +151,16 @@ export default function App() {
                             ? "delivered"
                             : "coordinating";
 
+      const resolvedOrderId =
+        data?.orderId || data?.order_id || null;
+
       setTask({
         text,
         stage,
         status: data.status,
         network: route,
         workflowId: data.workflow_id,
-        orderId: data.orderId || data.order_id || null
+        orderId: resolvedOrderId
       });
 
       setMessages((current) => [
@@ -175,11 +178,16 @@ export default function App() {
         }
       ]);
 
-      const resolvedOrderId =
-        data.orderId || data.order_id || null;
-
       if (resolvedOrderId) {
-        watchOrder(resolvedOrderId, text);
+        console.log(
+          "FETCH ORDER WATCH START",
+          resolvedOrderId
+        );
+
+        void watchOrder(
+          resolvedOrderId,
+          text
+        );
       }
     } catch (error) {
       console.error("FETCH UI ERROR", error);
@@ -216,9 +224,20 @@ export default function App() {
     const maxChecks = 100;
 
     for (let check = 0; check < maxChecks; check += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      if (check > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, 3000)
+        );
+      }
 
       try {
+        console.log(
+          "FETCH ORDER WATCH GET",
+          orderId,
+          "check",
+          check + 1
+        );
+
         const response = await fetch(
           `https://fetch-ten-olive.vercel.app/api/web/agent.mjs?orderId=${encodeURIComponent(orderId)}`,
           {
