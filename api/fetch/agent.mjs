@@ -346,7 +346,7 @@ async function getOrderStatus(orderId) {
   if (!id) return null;
 
   const rows = await supabaseRequest(
-    `orders?id=eq.${encodeURIComponent(id)}&select=id,status,items,store_name,item_total,fetch_fee,delivery_fee,total_amount,distance_km,delivery_pricing_status,payment_status,partner_store_id,partner_request_id,updated_at,created_at&limit=1`
+    `orders?id=eq.${encodeURIComponent(id)}&select=id,status,items,store_name,item_total,fetch_fee,delivery_fee,total_amount,delivery_pricing_status,payment_status,updated_at,created_at&limit=1`
   );
 
   return Array.isArray(rows) && rows.length ? rows[0] : null;
@@ -397,7 +397,7 @@ function buildOrderStatusMessage(order) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 
   if (req.method === "OPTIONS") {
     res.status(204).end();
