@@ -25,6 +25,22 @@ function getConversationId() {
   return created;
 }
 
+function formatRupees(value) {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return "₹0";
+  }
+
+  return `₹${amount.toLocaleString("en-IN", {
+    maximumFractionDigits: 2
+  })}`;
+}
+
+function isApprovalState(status) {
+  return status === "awaiting_customer_price_confirmation";
+}
+
 export default function App() {
   const [messages, setMessages] = useState([
     {
@@ -44,8 +60,9 @@ export default function App() {
   const recognitionRef = useRef(null);
   const conversationRef = useRef(getConversationId());
 
-  async function send(rawText) {
+  async function send(rawText, displayText = rawText) {
     const text = String(rawText || "").trim();
+    const visibleText = String(displayText || text).trim();
 
     if (!text || busy) {
       return;
@@ -56,7 +73,7 @@ export default function App() {
       {
         id: makeId(),
         role: "user",
-        text,
+        text: visibleText,
         meta: null
       }
     ]);
@@ -151,16 +168,13 @@ export default function App() {
                             ? "delivered"
                             : "coordinating";
 
-      const resolvedOrderId =
-        data?.orderId || data?.order_id || null;
-
       setTask({
         text,
         stage,
         status: data.status,
         network: route,
         workflowId: data.workflow_id,
-        orderId: resolvedOrderId
+        orderId: data.orderId || data.order_id || null
       });
 
       setMessages((current) => [
@@ -173,21 +187,16 @@ export default function App() {
             "I’m working on that.",
           meta: {
             status: data.status,
-            network: route
+            network: route,
+            order: data.order || null
           }
         }
       ]);
 
-      if (resolvedOrderId) {
-        console.log(
-          "FETCH ORDER WATCH START",
-          resolvedOrderId
-        );
+      const resolvedOrderId = data.orderId || data.order_id || null;
 
-        void watchOrder(
-          resolvedOrderId,
-          text
-        );
+      if (resolvedOrderId) {
+        watchOrder(resolvedOrderId, text);
       }
     } catch (error) {
       console.error("FETCH UI ERROR", error);
@@ -224,20 +233,9 @@ export default function App() {
     const maxChecks = 100;
 
     for (let check = 0; check < maxChecks; check += 1) {
-      if (check > 0) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, 3000)
-        );
-      }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
       try {
-        console.log(
-          "FETCH ORDER WATCH GET",
-          orderId,
-          "check",
-          check + 1
-        );
-
         const response = await fetch(
           `https://fetch-ten-olive.vercel.app/api/web/agent.mjs?orderId=${encodeURIComponent(orderId)}`,
           {
@@ -320,7 +318,8 @@ export default function App() {
                 text: message,
                 meta: {
                   status: order.status,
-                  network: route
+                  network: route,
+                  order
                 }
               }
             ];
@@ -504,7 +503,109 @@ export default function App() {
                     className={`bubble ${message.role}`}
                   >
 
-                    {message.text}
+                    {message.role === "assistant" &&
+                    isApprovalState(message.meta?.status) &&
+                    message.meta?.order ? (
+                      <>
+                        <div style={{
+                          fontWeight: 600,
+                          marginBottom: 12
+                        }}>
+                          The partner store has confirmed your order.
+                        </div>
+
+                        <div style={{
+                          border: "1px solid #e5e5e5",
+                          borderRadius: 14,
+                          padding: 14,
+                          background: "#fafafa",
+                          marginBottom: 12
+                        }}>
+                          <div style={{
+                            fontSize: 12,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                            color: "#777",
+                            marginBottom: 10
+                          }}>
+                            Order summary
+                          </div>
+
+                          <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 16,
+                            marginBottom: 7
+                          }}>
+                            <span>Products</span>
+                            <strong>{formatRupees(message.meta.order.item_total)}</strong>
+                          </div>
+
+                          <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 16,
+                            marginBottom: 7
+                          }}>
+                            <span>Delivery</span>
+                            <strong>{formatRupees(message.meta.order.delivery_fee)}</strong>
+                          </div>
+
+                          <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 16,
+                            marginBottom: 10
+                          }}>
+                            <span>Fetch fee</span>
+                            <strong>{formatRupees(message.meta.order.fetch_fee)}</strong>
+                          </div>
+
+                          <div style={{
+                            borderTop: "1px solid #e5e5e5",
+                            paddingTop: 10,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 16,
+                            fontSize: 16
+                          }}>
+                            <strong>Total</strong>
+                            <strong>{formatRupees(message.meta.order.total_amount)}</strong>
+                          </div>
+                        </div>
+
+                        <div style={{
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                          marginBottom: 12
+                        }}>
+                          Please approve the total to continue.
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            send("APPROVE", "Approved")
+                          }
+                          disabled={busy}
+                          style={{
+                            width: "100%",
+                            border: 0,
+                            borderRadius: 12,
+                            padding: "12px 14px",
+                            background: "#111",
+                            color: "#fff",
+                            fontWeight: 600,
+                            cursor: busy ? "default" : "pointer",
+                            opacity: busy ? 0.55 : 1
+                          }}
+                        >
+                          Approve {formatRupees(message.meta.order.total_amount)}
+                        </button>
+                      </>
+                    ) : (
+                      message.text
+                    )}
 
                     {message.meta?.network && (
                       <small className="meta">
