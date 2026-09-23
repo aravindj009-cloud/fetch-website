@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -9,77 +9,103 @@ const starters = [
   "Remember that I prefer things after 7 PM"
 ];
 
-const makeId = () =>
-  `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 function getConversationId() {
-  const existing = localStorage.getItem("fetch_conversation_id");
-  if (existing) return existing;
-  const created = `web:${makeId()}`;
-  localStorage.setItem("fetch_conversation_id", created);
-  return created;
+  try {
+    const existing = localStorage.getItem("fetch_conversation_id");
+    if (existing) return existing;
+    const created = `web:${makeId()}`;
+    localStorage.setItem("fetch_conversation_id", created);
+    return created;
+  } catch {
+    return `web:${makeId()}`;
+  }
 }
-
 
 function isPhysicalRequest(text) {
   const value = String(text || "").toLowerCase();
   return [
-    "buy ", "get me", "bring me", "deliver", "order",
-    "grocer", "kitkat", "kit kat", "milk", "bread",
-    "eggs", "rice", "snacks", "biscuit", "biscuits",
-    "water", "fetch me"
+    "buy ", "get me", "bring me", "deliver", "order", "grocer",
+    "kitkat", "kit kat", "milk", "bread", "eggs", "rice", "snacks",
+    "biscuit", "biscuits", "water", "fetch me"
   ].some((term) => value.includes(term));
 }
 
 function getBrowserLocation() {
   return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve(null);
-      return;
-    }
+    if (!navigator.geolocation) return resolve(null);
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude
-        });
-      },
+      (position) => resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      }),
       () => resolve(null),
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 30000
-      }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
     );
   });
 }
 
 function friendlyStatus(status) {
   const map = {
-    awaiting_physical_order: "Fulfilment path found",
-    resource_matched: "Execution path selected",
+    awaiting_location: "Location needed",
+    partner_offered: "Partner store contacted",
+    awaiting_customer_price_confirmation: "Waiting for your approval",
+    finding_shopper: "Finding shopper",
+    shopper_assigned: "Shopper assigned",
+    shopping: "Shopping",
+    picked_up: "Picked up",
+    out_for_delivery: "Out for delivery",
+    delivered: "Delivered",
     completed: "Done",
-    needs_clarification: "Need a little more information"
+    needs_clarification: "Need more information"
   };
-  return map[status] || "Coordinating";
+  return map[String(status || "").toLowerCase()] || "Coordinating";
 }
 
-export default function App() {
-  const [messages, setMessages] = useState([
-    {
-      id: "welcome",
-      role: "assistant",
-      text: "Hi, I’m Fetch. Tell me what you need done.",
-      meta: null
-    }
-  ]);
+function formatRupees(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return `₹${Math.round(number).toLocaleString("en-IN")}`;
+}
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error("FETCH UI RENDER ERROR", error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 40, fontFamily: "Arial, sans-serif" }}>
+          <h2>Fetch is still running.</h2>
+          <p>The display encountered an error. Your request may already be processing.</p>
+          <button onClick={() => window.location.reload()}>Refresh Fetch</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function App() {
+  const [messages, setMessages] = useState([
+    { id: "welcome", role: "assistant", text: "Hi, I’m Fetch. Tell me what you need done.", meta: null }
+  ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [task, setTask] = useState(null);
-
   const [activity, setActivity] = useState([
     { id: "understand", label: "Understand", description: "Intent + context", state: "idle" },
     { id: "plan", label: "Plan", description: "Task + workflow", state: "idle" },
@@ -88,89 +114,174 @@ export default function App() {
   ]);
 
   const inputRef = useRef(null);
-  const recognition = useRef(null);
-  const conversation = useRef(getConversationId());
+  const recognitionRef = useRef(null);
+  const conversationRef = useRef(getConversationId());
+  const pollTimerRef = useRef(null);
+  const pollGenerationRef = useRef(0);
 
-  function setActivityStates(states) {
-    setActivity((current) =>
-      current.map((item) => ({
-        ...item,
-        state: states[item.id] || item.state
-      }))
-    );
+  useEffect(() => () => {
+    pollGenerationRef.current += 1;
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    recognitionRef.current?.stop?.();
+  }, []);
+
+  function setActivityStates(next) {
+    setActivity((current) => current.map((item) => ({
+      ...item,
+      state: next[item.id] ?? item.state
+    })));
   }
 
   function resetActivity() {
-    setActivityStates({
-      understand: "idle",
-      plan: "idle",
-      route: "idle",
-      act: "idle"
-    });
+    setActivityStates({ understand: "idle", plan: "idle", route: "idle", act: "idle" });
+  }
+
+  function addAssistantMessage(text, meta = {}) {
+    setMessages((current) => [
+      ...current,
+      { id: makeId(), role: "assistant", text: String(text || "I’m working on that."), meta }
+    ]
+    );
+  }
+
+  function stopPolling() {
+    pollGenerationRef.current += 1;
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }
+
+  function startOrderPolling(orderId, requestText) {
+    if (!orderId) return;
+    stopPolling();
+    const generation = pollGenerationRef.current;
+    let attempts = 0;
+    let lastStatus = "";
+
+    const terminal = new Set(["delivered", "completed", "cancelled"]);
+
+    const poll = async () => {
+      if (generation !== pollGenerationRef.current) return;
+      attempts += 1;
+
+      try {
+        const response = await fetch(`/api/fetch/agent.mjs?orderId=${encodeURIComponent(orderId)}`, {
+          cache: "no-store"
+        });
+        const raw = await response.text();
+        let data = null;
+        try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+
+        if (!response.ok || !data?.success || !data?.order) {
+          throw new Error(data?.error || `Status request failed (${response.status})`);
+        }
+
+        const order = data.order;
+        const status = String(order.status || "").toLowerCase();
+        const itemTotal = Number(order.item_total);
+        const deliveryFee = Number(order.delivery_fee);
+        const total = Number(order.total_amount);
+
+        setTask((current) => ({
+          ...(current || {}),
+          text: requestText,
+          orderId,
+          status,
+          stage: status === "awaiting_customer_price_confirmation"
+            ? "price ready — awaiting your approval"
+            : status === "partner_offered"
+            ? "partner store contacted"
+            : status === "finding_shopper"
+            ? "finding shopper"
+            : status === "shopper_assigned"
+            ? "shopper assigned"
+            : status === "shopping"
+            ? "shopping"
+            : status === "out_for_delivery"
+            ? "out for delivery"
+            : status === "delivered" || status === "completed"
+            ? "done"
+            : current?.stage || "coordinating",
+          itemTotal: Number.isFinite(itemTotal) ? itemTotal : null,
+          deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : null,
+          total: Number.isFinite(total) && total > 0 ? total : null
+        }));
+
+        setActivityStates({
+          understand: "complete",
+          plan: "complete",
+          route: "complete",
+          act: terminal.has(status) ? "complete" : "active"
+        });
+
+        const message = String(data.message || "").trim();
+        if (message && status !== lastStatus) {
+          if (status !== "partner_offered" || !lastStatus) {
+            addAssistantMessage(message, { status, network: "physical" });
+          }
+          lastStatus = status;
+        }
+
+        if (terminal.has(status) || attempts >= 120) {
+          stopPolling();
+          return;
+        }
+      } catch (error) {
+        console.warn("FETCH ORDER POLLING", error);
+        if (attempts >= 5) {
+          // Do not blank the UI if polling temporarily fails.
+          setTask((current) => current ? { ...current, stage: "live order — refresh status if needed" } : current);
+          stopPolling();
+          return;
+        }
+      }
+
+      pollTimerRef.current = setTimeout(poll, 3000);
+    };
+
+    poll();
   }
 
   async function send(raw) {
     const text = String(raw || "").trim();
     if (!text || busy) return;
 
-    setMessages((current) => [
-      ...current,
-      { id: makeId(), role: "user", text, meta: null }
-    ]);
-
+    stopPolling();
+    setMessages((current) => [...current, { id: makeId(), role: "user", text, meta: null }]);
     setInput("");
     setBusy(true);
-
-    setActivityStates({
-      understand: "active",
-      plan: "waiting",
-      route: "waiting",
-      act: "waiting"
-    });
-
-    setTask({
-      text,
-      stage: "understanding",
-      status: "working",
-      network: null,
-      intent: null,
-      quote: null
-    });
+    setActivityStates({ understand: "active", plan: "waiting", route: "waiting", act: "waiting" });
+    setTask({ text, stage: "understanding", status: "working", network: null, orderId: null, itemTotal: null, deliveryFee: null, total: null });
 
     try {
       let location = null;
-
-      if (isPhysicalRequest(text)) {
-        location = await getBrowserLocation();
-      }
+      if (isPhysicalRequest(text)) location = await getBrowserLocation();
 
       const response = await fetch("/api/fetch/agent.mjs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          conversationId: conversation.current,
+          conversationId: conversationRef.current,
           channel: "web",
           latitude: location?.latitude ?? null,
           longitude: location?.longitude ?? null
         })
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data?.success) {
-        throw new Error(
-          data?.error || "Fetch could not process that request."
-        );
+      const rawResponse = await response.text();
+      let data = null;
+      try { data = rawResponse ? JSON.parse(rawResponse) : null; } catch {
+        throw new Error(`Fetch returned an invalid server response (${response.status}).`);
       }
 
-      const status = data.status || "unknown";
-      const intent = data.fetch?.intent || null;
-      const network =
-        data.atc?.resource_type ||
-        data.atc?.network ||
-        intent ||
-        "agent";
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Fetch could not process that request (${response.status}).`);
+      }
+
+      const status = String(data.status || "unknown");
+      const network = data.atc?.resource_type || data.atc?.network || "agent";
 
       setActivityStates({
         understand: "complete",
@@ -179,68 +290,25 @@ export default function App() {
         act: status === "completed" ? "complete" : "active"
       });
 
-      const quote = data.execution?.quote || null;
-
       setTask({
         text,
-        stage:
-          status === "completed"
-            ? "done"
-            : status === "needs_clarification"
-            ? "needs input"
-            : status === "awaiting_physical_order"
-            ? "ready for fulfilment"
-            : status === "partner_offered"
-            ? "partner store contacted"
-            : status === "awaiting_location"
-            ? "location needed"
-            : "coordinating",
+        stage: status === "completed" ? "done" : friendlyStatus(status).toLowerCase(),
         status,
         network,
-        intent,
-        quote
+        orderId: data.order_id || null,
+        itemTotal: null,
+        deliveryFee: null,
+        total: null
       });
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: makeId(),
-          role: "assistant",
-          text: data.message || "I’m working on that.",
-          meta: {
-            status,
-            network
-          }
-        }
-      ]);
+      addAssistantMessage(data.message || "I’m working on that.", { status, network });
+
+      if (data.order_id) startOrderPolling(data.order_id, text);
     } catch (error) {
-      setActivityStates({
-        understand: "complete",
-        plan: "complete",
-        route: "complete",
-        act: "error"
-      });
-
-      setTask({
-        text,
-        stage: "error",
-        status: "error",
-        network: null,
-        intent: null,
-        quote: null
-      });
-
-      setMessages((current) => [
-        ...current,
-        {
-          id: makeId(),
-          role: "assistant",
-          text:
-            error?.message ||
-            "I couldn’t process that right now.",
-          meta: { status: "error" }
-        }
-      ]);
+      console.error("FETCH UI ERROR", error);
+      setActivityStates({ understand: "complete", plan: "complete", route: "complete", act: "error" });
+      setTask({ text, stage: "error", status: "error", network: null, orderId: null, itemTotal: null, deliveryFee: null, total: null });
+      addAssistantMessage(error?.message || "I couldn’t process that right now.", { status: "error" });
     } finally {
       setBusy(false);
       setTimeout(() => inputRef.current?.focus(), 0);
@@ -248,82 +316,45 @@ export default function App() {
   }
 
   function voice() {
-    const SR =
-      window.SpeechRecognition ||
-      window.webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return alert("Voice input is not supported in this browser yet.");
+    if (listening) return recognitionRef.current?.stop();
 
-    if (!SR) {
-      alert("Voice input is not supported in this browser yet.");
-      return;
-    }
-
-    if (listening) {
-      recognition.current?.stop();
-      return;
-    }
-
-    const r = new SR();
-    r.lang = "en-IN";
-    r.interimResults = true;
-    r.continuous = false;
-
-    r.onstart = () => setListening(true);
-    r.onend = () => setListening(false);
-    r.onerror = () => setListening(false);
-
-    r.onresult = (event) => {
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-IN";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.onstart = () => setListening(true);
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+    recognition.onresult = (event) => {
       let transcript = "";
-      for (
-        let i = event.resultIndex;
-        i < event.results.length;
-        i++
-      ) {
-        transcript += event.results[i][0].transcript;
-      }
+      for (let i = event.resultIndex; i < event.results.length; i++) transcript += event.results[i][0].transcript;
       setInput(transcript);
     };
-
-    recognition.current = r;
-    r.start();
+    recognitionRef.current = recognition;
+    recognition.start();
   }
 
   function clearConversation() {
-    const newConversation = `web:${makeId()}`;
-    localStorage.setItem(
-      "fetch_conversation_id",
-      newConversation
-    );
-    conversation.current = newConversation;
-
-    setMessages([
-      {
-        id: makeId(),
-        role: "assistant",
-        text: "Fresh start. What do you need done?",
-        meta: null
-      }
-    ]);
-
+    stopPolling();
+    const fresh = `web:${makeId()}`;
+    try { localStorage.setItem("fetch_conversation_id", fresh); } catch {}
+    conversationRef.current = fresh;
+    setMessages([{ id: makeId(), role: "assistant", text: "Fresh start. What do you need done?", meta: null }]);
     setTask(null);
     resetActivity();
     setInput("");
   }
 
-  const hasUserMessage = messages.some(
-    (message) => message.role === "user"
-  );
+  const hasUserMessage = messages.some((message) => message.role === "user");
 
   return (
     <div className="app">
       <header>
-        <button className="brand" onClick={clearConversation}>
-          fetch<span>.</span>
-        </button>
-
+        <button className="brand" onClick={clearConversation}>fetch<span>.</span></button>
         <div className="top">
-          <span className="ready">
-            <i /> Fetch is ready
-          </span>
+          <span className="ready"><i /> Fetch is ready</span>
           <button onClick={clearConversation}>New</button>
         </div>
       </header>
@@ -331,214 +362,77 @@ export default function App() {
       <main>
         <section className="intro">
           <small>PERSONAL AI AGENT</small>
-          <h1>
-            Tell Fetch what you need.
-            <br />
-            <em>We’ll figure out how.</em>
-          </h1>
-          <p>
-            Don't choose the app, service or store.
-            Tell Fetch the outcome you want and let
-            Fetch work out the execution.
-          </p>
+          <h1>Tell Fetch what you need.<br /><em>We’ll figure out how.</em></h1>
+          <p>Don't choose the app, service or store. Tell Fetch the outcome you want and let Fetch work out the execution.</p>
         </section>
 
         <section className="workspace">
           <div className="chat">
             <div className="chatHead">
-              <div className="identity">
-                <b>F.</b>
-                <span>
-                  <strong>Fetch</strong>
-                  <small>Personal assistant</small>
-                </span>
-              </div>
+              <div className="identity"><b>F.</b><span><strong>Fetch</strong><small>Personal assistant</small></span></div>
               <label>PRIVATE SESSION</label>
             </div>
 
             <div className="messages">
               {messages.map((m) => (
                 <div className={`row ${m.role}`} key={m.id}>
-                  {m.role === "assistant" && (
-                    <b className="tiny">F.</b>
-                  )}
+                  {m.role === "assistant" && <b className="tiny">F.</b>}
                   <div className={`bubble ${m.role}`}>
-                    {m.text}
-                    {m.meta?.status &&
-                      m.role === "assistant" && (
-                        <small className="meta">
-                          {friendlyStatus(m.meta.status)}
-                        </small>
-                      )}
+                    {String(m.text || "")}
+                    {m.meta?.status && m.role === "assistant" && <small className="meta">{friendlyStatus(m.meta.status)}</small>}
                   </div>
                 </div>
               ))}
-
-              {busy && (
-                <div className="row assistant">
-                  <b className="tiny">F.</b>
-                  <div className="bubble assistant thinking">
-                    <i /><i /><i />
-                    <small>Fetch is figuring it out…</small>
-                  </div>
-                </div>
-              )}
+              {busy && <div className="row assistant"><b className="tiny">F.</b><div className="bubble assistant thinking"><i /><i /><i /><small>Fetch is figuring it out…</small></div></div>}
             </div>
 
             <div className="composeArea">
-              {!hasUserMessage && (
-                <div className="starters">
-                  {starters.map((x) => (
-                    <button
-                      key={x}
-                      onClick={() => send(x)}
-                    >
-                      {x}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  send(input);
-                }}
-              >
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (
-                      e.key === "Enter" &&
-                      !e.shiftKey
-                    ) {
-                      e.preventDefault();
-                      send(input);
-                    }
-                  }}
-                  placeholder="Tell Fetch what you need…"
-                  rows="1"
-                  disabled={busy}
-                />
-
-                <button
-                  type="button"
-                  className={listening ? "listen" : ""}
-                  onClick={voice}
-                >
-                  {listening ? "●" : "⌕"}
-                </button>
-
-                <button
-                  className="send"
-                  disabled={!input.trim() || busy}
-                >
-                  ↑
-                </button>
+              {!hasUserMessage && <div className="starters">{starters.map((x) => <button key={x} onClick={() => send(x)}>{x}</button>)}</div>}
+              <form onSubmit={(e) => { e.preventDefault(); send(input); }}>
+                <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }} placeholder="Tell Fetch what you need…" rows="1" disabled={busy} />
+                <button type="button" className={listening ? "listen" : ""} onClick={voice} aria-label="Voice input">{listening ? "●" : "⌕"}</button>
+                <button className="send" disabled={!input.trim() || busy} aria-label="Send">↑</button>
               </form>
-
-              <small className="hint">
-                Enter to send · Fetch may ask for confirmation
-                before taking an action
-              </small>
+              <small className="hint">Enter to send · Fetch may ask for confirmation before taking an action</small>
             </div>
           </div>
 
           <aside>
             <small>FETCH ATC</small>
-
-            <h2>
-              You ask.
-              <br />
-              <em>Fetch coordinates.</em>
-            </h2>
-
-            <p>
-              You don't need to choose a service.
-              Fetch determines the execution path behind
-              the scenes.
-            </p>
+            <h2>You ask.<br /><em>Fetch coordinates.</em></h2>
+            <p>You don't need to choose a service. Fetch determines the execution path behind the scenes.</p>
 
             <div className="flow">
-              {activity.map((item, index) => (
-                <React.Fragment key={item.id}>
-                  <div className={`node ${item.state}`}>
-                    <b>
-                      {String(index + 1).padStart(2, "0")}
-                    </b>
-                    <span>
-                      <strong>{item.label}</strong>
-                      <small>{item.description}</small>
-                    </span>
-                    {item.state === "complete" && (
-                      <i className="check">✓</i>
-                    )}
-                    {item.state === "active" && (
-                      <i className="pulse">●</i>
-                    )}
-                  </div>
-                  {index < activity.length - 1 && (
-                    <i className="line" />
-                  )}
-                </React.Fragment>
-              ))}
+              {activity.map((item, index) => <React.Fragment key={item.id}>
+                <div className={`node ${item.state}`}><b>{String(index + 1).padStart(2, "0")}</b><span><strong>{item.label}</strong><small>{item.description}</small></span>{item.state === "complete" && <i className="check">✓</i>}{item.state === "active" && <i className="pulse">●</i>}</div>
+                {index < activity.length - 1 && <i className="line" />}
+              </React.Fragment>)}
             </div>
 
-            {task && (
-              <div className="live">
-                <small>LIVE TASK · {task.stage}</small>
-                <p>{task.text}</p>
+            {task && <div className="live">
+              <small>LIVE TASK · {String(task.stage || "coordinating")}</small>
+              <p>{String(task.text || "")}</p>
+              {task.network && <span>Route <b>{String(task.network)}</b></span>}
+              {task.orderId && <span>Order <b>{String(task.orderId).slice(0, 8).toUpperCase()}</b></span>}
+              {task.status === "awaiting_customer_price_confirmation" && <div className="quote">
+                <strong>Current total</strong><b>{formatRupees(task.total) || "—"}</b>
+                {formatRupees(task.itemTotal) && <small>Items {formatRupees(task.itemTotal)}</small>}
+                {formatRupees(task.deliveryFee) && <small>Delivery {formatRupees(task.deliveryFee)}</small>}
+              </div>}
+            </div>}
 
-                {task.intent && (
-                  <span>
-                    Intent <b>{task.intent}</b>
-                  </span>
-                )}
-
-                {task.network && (
-                  <span>
-                    Route <b>{task.network}</b>
-                  </span>
-                )}
-
-                {task.quote && (
-                  <div className="quote">
-                    <strong>Estimated total</strong>
-                    <b>
-                      ₹{task.quote.total}
-                    </b>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="networks">
-              <b>◌<small>Digital</small></b>
-              <b>◇<small>Physical</small></b>
-              <b>⌁<small>Human</small></b>
-            </div>
-
-            <p className="note">
-              Internal routing stays behind Fetch.
-              Customers don't need to choose a store,
-              service or execution method.
-            </p>
+            <div className="networks"><b>◌<small>Digital</small></b><b>◇<small>Physical</small></b><b>⌁<small>Human</small></b></div>
+            <p className="note">Internal routing stays behind Fetch. Customers don't need to choose a store or service.</p>
           </aside>
         </section>
 
-        <section className="statement">
-          <small>THE IDEA</small>
-          <h2>
-            Don't learn another app.
-            <br />
-            <em>Delegate the task.</em>
-          </h2>
-        </section>
+        <section className="statement"><small>THE IDEA</small><h2>Don’t learn another app.<br /><em>Delegate the task.</em></h2></section>
       </main>
     </div>
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+window.addEventListener("error", (event) => console.error("FETCH GLOBAL ERROR", event.error || event.message));
+window.addEventListener("unhandledrejection", (event) => console.error("FETCH UNHANDLED REJECTION", event.reason));
+
+createRoot(document.getElementById("root")).render(<ErrorBoundary><App /></ErrorBoundary>);
