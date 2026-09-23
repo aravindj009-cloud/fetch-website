@@ -241,12 +241,22 @@ async function dispatchPhysicalOrder(order) {
     };
   }
 
-  const offer = await offerOrderToPartnerStore({
-    order,
-    partnerStore,
-    distanceKm: match.distanceKm,
-    resourceId: match.resourceId
-  });
+  let offer;
+  try {
+    offer = await offerOrderToPartnerStore({
+      order,
+      partnerStore,
+      distanceKm: match.distanceKm,
+      resourceId: match.resourceId
+    });
+  } catch (error) {
+    console.error("FETCH PARTNER STORE OFFER ERROR", error);
+    return {
+      success: false,
+      reason: error?.message || "partner_offer_failed",
+      fallback: "shopper"
+    };
+  }
 
   if (!offer?.success) {
     return {
@@ -331,6 +341,59 @@ function buildMessage(result) {
   );
 }
 
+async function getOrderStatus(orderId) {
+  const id = clean(orderId);
+  if (!id) return null;
+
+  const rows = await supabaseRequest(
+    `orders?id=eq.${encodeURIComponent(id)}&select=id,status,items,store_name,item_total,fetch_fee,delivery_fee,total_amount,distance_km,delivery_pricing_status,payment_status,partner_store_id,partner_request_id,updated_at,created_at&limit=1`
+  );
+
+  return Array.isArray(rows) && rows.length ? rows[0] : null;
+}
+
+function buildOrderStatusMessage(order) {
+  const status = clean(order?.status).toLowerCase();
+
+  if (status === "partner_offered") {
+    return "I’ve found a partner store and sent your request. I’m waiting for the store to confirm availability and the actual price.";
+  }
+
+  if (status === "awaiting_customer_price_confirmation") {
+    const total = Number(order?.total_amount);
+    if (Number.isFinite(total) && total > 0) {
+      return `The store has confirmed the items. Your current total is ₹${Math.round(total).toLocaleString("en-IN")}. Please review it before Fetch proceeds.`;
+    }
+    return "The store has confirmed the items. I’m preparing the final total for your approval.";
+  }
+
+  if (status === "finding_shopper") {
+    return "Your order has moved to the Fetch shopper network. I’m finding a shopper now.";
+  }
+
+  if (status === "shopper_assigned") {
+    return "A Fetch shopper has accepted the order and will start shopping.";
+  }
+
+  if (status === "shopping") {
+    return "Your Fetch shopper is shopping for the order now.";
+  }
+
+  if (status === "picked_up") {
+    return "Your order has been picked up and is moving to delivery.";
+  }
+
+  if (status === "out_for_delivery") {
+    return "Your Fetch order is out for delivery.";
+  }
+
+  if (status === "delivered" || status === "completed") {
+    return "Your Fetch order is complete.";
+  }
+
+  return null;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -339,6 +402,42 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") {
     res.status(204).end();
     return;
+  }
+
+  if (req.method === "GET") {
+    try {
+      const url = new URL(req.url, `https://${req.headers.host || "localhost"}`);
+      const orderId = clean(url.searchParams.get("orderId"));
+
+      if (!orderId) {
+        return json(res, 400, {
+          success: false,
+          error: "orderId is required"
+        });
+      }
+
+      const order = await getOrderStatus(orderId);
+
+      if (!order) {
+        return json(res, 404, {
+          success: false,
+          error: "order_not_found"
+        });
+      }
+
+      return json(res, 200, {
+        success: true,
+        order,
+        status: order.status,
+        message: buildOrderStatusMessage(order)
+      });
+    } catch (error) {
+      console.error("FETCH ORDER STATUS API ERROR", error);
+      return json(res, 500, {
+        success: false,
+        error: error?.message || "Could not load order status"
+      });
+    }
   }
 
   if (req.method !== "POST") {
