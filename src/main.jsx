@@ -157,7 +157,7 @@ export default function App() {
         status: data.status,
         network: route,
         workflowId: data.workflow_id,
-        orderId: data.order_id || null
+        orderId: data.orderId || data.order_id || null
       });
 
       setMessages((current) => [
@@ -175,8 +175,11 @@ export default function App() {
         }
       ]);
 
-      if (data.order_id) {
-        watchOrder(data.order_id, text);
+      const resolvedOrderId =
+        data.orderId || data.order_id || null;
+
+      if (resolvedOrderId) {
+        watchOrder(resolvedOrderId, text);
       }
     } catch (error) {
       console.error("FETCH UI ERROR", error);
