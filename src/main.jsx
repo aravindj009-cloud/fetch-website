@@ -174,7 +174,17 @@ function App() {
         try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
 
         if (!response.ok || !data?.success || !data?.order) {
-          throw new Error(data?.error || `Status request failed (${response.status})`);
+          console.warn("FETCH STATUS POLL", data?.error || `Status request failed (${response.status})`);
+          setTask((current) => ({
+            ...(current || {}),
+            text: requestText,
+            orderId,
+            stage: current?.stage || "waiting for partner store",
+            status: current?.status || "partner_offered"
+          }));
+          addAssistantMessage("I’ve sent your request to the partner store. I’m waiting for their availability and actual price.", { status: "partner_offered", network: "partner_store" });
+          if (attempts < 30) pollTimerRef.current = setTimeout(poll, 5000);
+          return;
         }
 
         const order = data.order;
