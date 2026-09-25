@@ -25,6 +25,187 @@ function getConversationId() {
   return created;
 }
 
+
+function StructuredAnswer({ text }) {
+  const clean = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/```(?:markdown|md|text)?/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  const sourceLines = clean
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const blocks = [];
+
+  for (const line of sourceLines) {
+    const heading = line.match(/^#{1,6}\s*(.+)$/);
+    const numbered = line.match(/^(\d{1,2})[.)]\s+(.+)$/);
+    const bullet = line.match(/^(?:[-*•▪◦])\s+(.+)$/);
+
+    if (heading) {
+      blocks.push({ type: "heading", text: heading[1] });
+    } else if (numbered) {
+      blocks.push({
+        type: "numbered",
+        number: numbered[1],
+        text: numbered[2]
+      });
+    } else if (bullet) {
+      blocks.push({
+        type: "bullet",
+        text: bullet[1]
+      });
+    } else {
+      blocks.push({
+        type: "paragraph",
+        text: line
+      });
+    }
+  }
+
+  // Models sometimes return "1. ... 2. ... 3. ..." in one paragraph.
+  const expanded = [];
+
+  for (const block of blocks) {
+    if (block.type !== "paragraph") {
+      expanded.push(block);
+      continue;
+    }
+
+    const pieces = block.text
+      .split(/\s+(?=\d{1,2}[.)]\s+)/g)
+      .filter(Boolean);
+
+    if (pieces.length === 1) {
+      expanded.push(block);
+      continue;
+    }
+
+    for (const piece of pieces) {
+      const match = piece.match(/^(\d{1,2})[.)]\s+(.+)$/);
+
+      expanded.push(
+        match
+          ? {
+              type: "numbered",
+              number: match[1],
+              text: match[2]
+            }
+          : {
+              type: "paragraph",
+              text: piece
+            }
+      );
+    }
+  }
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        gap: "10px"
+      }}
+    >
+      {expanded.map((block, index) => {
+        if (block.type === "heading") {
+          return (
+            <div
+              key={index}
+              style={{
+                marginTop: index ? "5px" : 0,
+                fontSize: "15px",
+                lineHeight: 1.35,
+                fontWeight: 700,
+                letterSpacing: "-0.01em",
+                color: "#111"
+              }}
+            >
+              {block.text}
+            </div>
+          );
+        }
+
+        if (block.type === "numbered") {
+          return (
+            <div
+              key={index}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "28px minmax(0, 1fr)",
+                gap: "9px",
+                alignItems: "start",
+                marginTop: "2px"
+              }}
+            >
+              <span
+                style={{
+                  width: "24px",
+                  height: "24px",
+                  display: "grid",
+                  placeItems: "center",
+                  borderRadius: "50%",
+                  background: "#111",
+                  color: "#fff",
+                  fontSize: "11px",
+                  fontWeight: 700
+                }}
+              >
+                {block.number}
+              </span>
+
+              <div
+                style={{
+                  paddingTop: "2px",
+                  lineHeight: 1.58,
+                  color: "#161616"
+                }}
+              >
+                {block.text}
+              </div>
+            </div>
+          );
+        }
+
+        if (block.type === "bullet") {
+          return (
+            <div
+              key={index}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "14px minmax(0, 1fr)",
+                gap: "4px",
+                alignItems: "start",
+                lineHeight: 1.55
+              }}
+            >
+              <span style={{ fontWeight: 700 }}>•</span>
+              <div>{block.text}</div>
+            </div>
+          );
+        }
+
+        return (
+          <p
+            key={index}
+            style={{
+              margin: 0,
+              lineHeight: 1.62,
+              color: "#161616"
+            }}
+          >
+            {block.text}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function App() {
   const [messages, setMessages] = useState([
     {
@@ -545,7 +726,11 @@ export default function App() {
                     className={`bubble ${message.role}`}
                   >
 
-                    {message.text}
+                    {message.role === "assistant" ? (
+                      <StructuredAnswer text={message.text} />
+                    ) : (
+                      message.text
+                    )}
 
                     {message.meta?.network && (
                       <small className="meta">
