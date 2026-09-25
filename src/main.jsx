@@ -26,12 +26,124 @@ function getConversationId() {
 }
 
 
-function StructuredAnswer({ text }) {
-  const clean = String(text || "")
+function renderInline(text) {
+  const value = String(text || "");
+  const tokens = [];
+  let remaining = value;
+  let tokenId = 0;
+
+  const pushText = (content) => {
+    if (content) {
+      tokens.push(
+        <React.Fragment key={`text-${tokenId++}`}>
+          {content}
+        </React.Fragment>
+      );
+    }
+  };
+
+  while (remaining) {
+    const markdownLink = remaining.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/i);
+
+    if (markdownLink) {
+      tokens.push(
+        <a
+          key={`link-${tokenId++}`}
+          href={markdownLink[2]}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            color: "#111",
+            fontWeight: 650,
+            textDecoration: "underline",
+            textUnderlineOffset: "2px"
+          }}
+        >
+          {markdownLink[1]}
+        </a>
+      );
+      remaining = remaining.slice(markdownLink[0].length);
+      continue;
+    }
+
+    const rawUrl = remaining.match(/^(https?:\/\/[^\s)]+)/i);
+
+    if (rawUrl) {
+      tokens.push(
+        <a
+          key={`url-${tokenId++}`}
+          href={rawUrl[1]}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            color: "#111",
+            fontWeight: 650,
+            textDecoration: "underline",
+            textUnderlineOffset: "2px"
+          }}
+        >
+          Open source ↗
+        </a>
+      );
+      remaining = remaining.slice(rawUrl[1].length);
+      continue;
+    }
+
+    const bold = remaining.match(/^\*\*([^*]+)\*\*/);
+
+    if (bold) {
+      tokens.push(
+        <strong key={`bold-${tokenId++}`} style={{ fontWeight: 700 }}>
+          {bold[1]}
+        </strong>
+      );
+      remaining = remaining.slice(bold[0].length);
+      continue;
+    }
+
+    const italic = remaining.match(/^\*([^*]+)\*/);
+
+    if (italic) {
+      tokens.push(
+        <strong key={`italic-${tokenId++}`} style={{ fontWeight: 650 }}>
+          {italic[1]}
+        </strong>
+      );
+      remaining = remaining.slice(italic[0].length);
+      continue;
+    }
+
+    const nextSpecial = remaining.search(/\[|\*\*?https?:\/\/|\*\*/);
+
+    if (nextSpecial === -1) {
+      pushText(remaining);
+      break;
+    }
+
+    if (nextSpecial > 0) {
+      pushText(remaining.slice(0, nextSpecial));
+      remaining = remaining.slice(nextSpecial);
+    } else {
+      pushText(remaining.charAt(0));
+      remaining = remaining.slice(1);
+    }
+  }
+
+  return tokens;
+}
+
+function cleanAnswerText(value) {
+  return String(value || "")
     .replace(/\r\n/g, "\n")
     .replace(/```(?:markdown|md|text)?/gi, "")
     .replace(/```/g, "")
+    .replace(/\s*---+\s*/g, "\n")
+    .replace(/\s*___+\s*/g, "\n")
     .trim();
+}
+
+function StructuredAnswer({ text }) {
+  const clean = cleanAnswerText(text);
 
   const sourceLines = clean
     .split("\n")
@@ -45,8 +157,13 @@ function StructuredAnswer({ text }) {
     const numbered = line.match(/^(\d{1,2})[.)]\s+(.+)$/);
     const bullet = line.match(/^(?:[-*•▪◦])\s+(.+)$/);
 
+    // A model sometimes returns "*Flights" as a bullet-like heading.
+    const starHeading = line.match(/^\*([^*]+)\*$/);
+
     if (heading) {
       blocks.push({ type: "heading", text: heading[1] });
+    } else if (starHeading) {
+      blocks.push({ type: "heading", text: starHeading[1] });
     } else if (numbered) {
       blocks.push({
         type: "numbered",
@@ -54,10 +171,20 @@ function StructuredAnswer({ text }) {
         text: numbered[2]
       });
     } else if (bullet) {
-      blocks.push({
-        type: "bullet",
-        text: bullet[1]
-      });
+      const bulletText = bullet[1].trim();
+      const bulletHeading = bulletText.match(/^\*([^*]+)\*:?$/);
+
+      if (bulletHeading) {
+        blocks.push({
+          type: "heading",
+          text: bulletHeading[1]
+        });
+      } else {
+        blocks.push({
+          type: "bullet",
+          text: bulletText
+        });
+      }
     } else {
       blocks.push({
         type: "paragraph",
@@ -66,7 +193,7 @@ function StructuredAnswer({ text }) {
     }
   }
 
-  // Models sometimes return "1. ... 2. ... 3. ..." in one paragraph.
+  // Split common inline "1. ... 2. ... 3. ..." responses.
   const expanded = [];
 
   for (const block of blocks) {
@@ -108,7 +235,7 @@ function StructuredAnswer({ text }) {
         width: "100%",
         display: "flex",
         flexDirection: "column",
-        gap: "10px"
+        gap: "11px"
       }}
     >
       {expanded.map((block, index) => {
@@ -117,7 +244,8 @@ function StructuredAnswer({ text }) {
             <div
               key={index}
               style={{
-                marginTop: index ? "5px" : 0,
+                marginTop: index ? "7px" : 0,
+                paddingBottom: "1px",
                 fontSize: "15px",
                 lineHeight: 1.35,
                 fontWeight: 700,
@@ -125,7 +253,7 @@ function StructuredAnswer({ text }) {
                 color: "#111"
               }}
             >
-              {block.text}
+              {renderInline(block.text)}
             </div>
           );
         }
@@ -165,7 +293,7 @@ function StructuredAnswer({ text }) {
                   color: "#161616"
                 }}
               >
-                {block.text}
+                {renderInline(block.text)}
               </div>
             </div>
           );
@@ -177,14 +305,25 @@ function StructuredAnswer({ text }) {
               key={index}
               style={{
                 display: "grid",
-                gridTemplateColumns: "14px minmax(0, 1fr)",
-                gap: "4px",
+                gridTemplateColumns: "15px minmax(0, 1fr)",
+                gap: "5px",
                 alignItems: "start",
-                lineHeight: 1.55
+                lineHeight: 1.58
               }}
             >
-              <span style={{ fontWeight: 700 }}>•</span>
-              <div>{block.text}</div>
+              <span
+                style={{
+                  fontSize: "14px",
+                  lineHeight: 1.4,
+                  color: "#111"
+                }}
+              >
+                •
+              </span>
+
+              <div>
+                {renderInline(block.text)}
+              </div>
             </div>
           );
         }
@@ -198,7 +337,7 @@ function StructuredAnswer({ text }) {
               color: "#161616"
             }}
           >
-            {block.text}
+            {renderInline(block.text)}
           </p>
         );
       })}
