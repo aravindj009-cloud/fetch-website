@@ -37,8 +37,20 @@ function formatRupees(value) {
   })}`;
 }
 
-function isApprovalState(status) {
-  return status === "awaiting_customer_price_confirmation";
+function isApprovalState(status, order = null) {
+  return (
+    status === "awaiting_customer_price_confirmation" ||
+    order?.status === "awaiting_customer_price_confirmation"
+  );
+}
+
+function hasQuotedOrder(order) {
+  return Boolean(
+    order &&
+    order.status === "awaiting_customer_price_confirmation" &&
+    order.total_amount !== null &&
+    order.total_amount !== undefined
+  );
 }
 
 export default function App() {
@@ -504,7 +516,13 @@ export default function App() {
                   >
 
                     {message.role === "assistant" &&
-                    isApprovalState(message.meta?.status) &&
+                    (
+                      hasQuotedOrder(message.meta?.order) ||
+                      isApprovalState(
+                        message.meta?.status,
+                        message.meta?.order
+                      )
+                    ) &&
                     message.meta?.order ? (
                       <>
                         <div style={{
