@@ -46,95 +46,203 @@ function getHost(url) {
   }
 }
 
-function parseResearchResults(text) {
-  const raw = decodeEntities(text);
+function normalizeResearchText(value) {
+  return String(value || "")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  if (!/here[’']s what i found for/i.test(raw)) {
+function cleanResearchTitle(value) {
+  return normalizeResearchText(value)
+    .replace(/^[-–—:|]+\s*/, "")
+    .replace(/\s*[-–—:|]+\s*$/, "")
+    .trim();
+}
+
+function parseResearchResults(text) {
+  const raw = normalizeResearchText(text);
+
+  if (!/here[’']s what i found/i.test(raw)) {
     return null;
   }
 
-  const results = [];
+  const matches = [];
   const itemPattern = /(?:^|\s)(\d+)\.\s+([\s\S]*?)(?=\s+\d+\.\s+|$)/g;
   let match;
 
   while ((match = itemPattern.exec(raw)) !== null) {
     const number = Number(match[1]);
-    let content = match[2].trim();
+    let content = normalizeResearchText(match[2]);
 
-    const urlMatch = content.match(/https?:\/\/\S+/i);
-    const url = urlMatch ? urlMatch[0].replace(/[),.;]+$/, "") : "";
+    if (!content) continue;
 
-    if (urlMatch) {
-      content = content.replace(urlMatch[0], " ").trim();
+    // Remove the long Google News tracking URL first.
+    const urlMatch = content.match(/https?:\/\/[^\s]+/i);
+    const url = urlMatch
+      ? urlMatch[0].replace(/[),.;]+$/, "")
+      : "";
+
+    if (url) {
+      content = content.replace(urlMatch[0], " ");
     }
 
-    let published = "";
-    let source = "";
+    content = normalizeResearchText(content);
 
-    const sourceDateMatch = content.match(
-      /\s+Source:\s*(.*?)\s*[·|-]\s*(\d{1,2}\s+[A-Za-z]{3,4}\s+\d{4})\s*$/i
+    // The RSS result can contain publisher + repeated title + article context.
+    // Extract the date wherever it occurs, not only at the end.
+    const dateMatch = content.match(
+      /\b(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})\b/i
     );
 
-    if (sourceDateMatch) {
-      source = sourceDateMatch[1].trim();
-      published = sourceDateMatch[2].trim();
-      content = content.slice(0, sourceDateMatch.index).trim();
-    } else {
-      const dateMatch = content.match(/(\d{1,2}\s+[A-Za-z]{3,4}\s+\d{4})\s*$/i);
-      if (dateMatch) {
-        published = dateMatch[1];
-        content = content.slice(0, dateMatch.index).trim();
-      }
+    const published = dateMatch ? dateMatch[1] : "";
 
-      const sourceMatch = content.match(/\s+Source:\s*(.+)$/i);
-      if (sourceMatch) {
-        source = sourceMatch[1].trim();
-        content = content.slice(0, sourceMatch.index).trim();
+    if (dateMatch) {
+      content = normalizeResearchText(
+        content.slice(0, dateMatch.index) +
+        " " +
+        content.slice(dateMatch.index + dateMatch[0].length)
+      );
+    }
+
+    // Pull an explicit Source marker if present.
+    let source = "";
+    const sourceMatch = content.match(
+      /\bSource:\s*([^|]+?)(?=\s+(?:Published|$))/i
+    );
+
+    if (sourceMatch) {
+      source = cleanResearchTitle(sourceMatch[1]);
+      content = normalizeResearchText(
+        content.replace(sourceMatch[0], " ")
+      );
+    }
+
+    // If the source marker was not present, infer a publisher from common
+    // domain fragments that Google News RSS places after the article text.
+    const sourceCandidates = [
+      "Financial Times",
+      "BBC",
+      "The New York Times",
+      "New York Times",
+      "TechCrunch",
+      "Business Insider",
+      "WIRED",
+      "Google",
+      "CNBC",
+      "The Hindu",
+      "Investing.com",
+      "PR Newswire",
+      "OpenAI",
+      "blog.google"
+    ];
+
+    if (!source) {
+      for (const candidate of sourceCandidates) {
+        const re = new RegExp(
+          `\\b${candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+          "i"
+        );
+
+        if (re.test(content)) {
+          source = candidate;
+          break;
+        }
       }
     }
 
     if (!source && url) {
-      source = getHost(url);
+      try {
+        source = new URL(url).hostname
+          .replace(/^www\./, "")
+          .replace(/^news\./, "");
+      } catch {
+        source = "Web";
+      }
     }
 
-    // RSS titles often contain the headline followed by the publisher's
-    // repeated headline/context. Use the first clean headline and retain
-    // only a short context sentence when available.
-    const separators = /\s+(?:–|—)\s+/;
-    const parts = content.split(separators).map((part) => part.trim()).filter(Boolean);
+    // Remove obvious RSS/publisher noise.
+    content = content
+      .replace(/\bSource:\s*$/i, "")
+      .replace(/\bPublished:\s*$/i, "")
+      .replace(/\bSource\s*$/i, "")
+      .trim();
 
-    let title = parts[0] || content;
-    let summary = parts.slice(1).join(" — ");
+    // Google News titles commonly look like:
+    // "Headline – Publisher Headline Publisher"
+    // Find the first separator and treat the first segment as the headline.
+    let title = content;
+    let summary = "";
 
-    // Remove duplicated headline text caused by Google News RSS.
-    const lowerTitle = title.toLowerCase();
-    if (summary.toLowerCase().startsWith(lowerTitle)) {
-      summary = summary.slice(title.length).trim();
+    const separator = content.search(/\s+[–—-]\s+/);
+
+    if (separator > 0) {
+      title = content.slice(0, separator).trim();
+      summary = content.slice(separator).replace(/^\s+[–—-]\s+/, "").trim();
     }
 
-    // Keep cards compact. The complete article is available through the link.
-    title = title.replace(/\s+/g, " ").trim();
-    summary = summary.replace(/\s+/g, " ").trim();
+    // If no separator exists, use the first sentence as the title.
+    if (title.length > 180) {
+      const sentenceEnd = title.search(/[.!?]\s+/);
 
-    // RSS feeds often contain several related headlines in one item.
-    // Do not dump that noisy feed text into the customer chat.
-    if (summary.length > 160) {
-      summary = summary.slice(0, 157).trimEnd() + "…";
+      if (sentenceEnd > 40) {
+        summary = title.slice(sentenceEnd + 1).trim();
+        title = title.slice(0, sentenceEnd + 1).trim();
+      }
     }
 
-    results.push({
+    // Remove repeated title/publisher fragments from the summary.
+    if (summary) {
+      const titleLower = title.toLowerCase();
+
+      while (
+        summary.toLowerCase().startsWith(titleLower)
+      ) {
+        summary = summary.slice(title.length).trim();
+        summary = summary.replace(/^[–—-]\s*/, "");
+      }
+
+      if (source) {
+        const sourceIndex = summary.toLowerCase().lastIndexOf(
+          source.toLowerCase()
+        );
+
+        if (sourceIndex >= 0 && sourceIndex > 20) {
+          summary = summary.slice(0, sourceIndex).trim();
+        }
+      }
+    }
+
+    // Remove stray publisher names from the end of the title.
+    if (source) {
+      const sourceRegex = new RegExp(
+        `\\s+${source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        "i"
+      );
+      title = title.replace(sourceRegex, "").trim();
+    }
+
+    title = cleanResearchTitle(title);
+    summary = cleanResearchTitle(summary);
+
+    if (!title) continue;
+
+    matches.push({
       number,
       title: title.slice(0, 180),
-      summary: summary.slice(0, 240),
+      summary: summary.slice(0, 280),
       source: source || "Web",
       published,
       url
     });
-
-    if (results.length >= 8) break;
   }
 
-  return results.length ? results : null;
+  return matches.length ? matches.slice(0, 8) : null;
 }
 
 function ResearchResults({ text }) {
@@ -145,30 +253,132 @@ function ResearchResults({ text }) {
   }
 
   return (
-    <div className="researchResults">
-      <div className="researchIntro">
-        <strong>Here’s what I found</strong>
-        <span>Latest web results</span>
+    <div
+      className="researchResults"
+      style={{
+        width: "100%",
+        maxWidth: "100%",
+        boxSizing: "border-box"
+      }}
+    >
+      <div
+        className="researchIntro"
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: "16px",
+          paddingBottom: "12px",
+          marginBottom: "4px",
+          borderBottom: "1px solid rgba(0,0,0,0.08)"
+        }}
+      >
+        <strong style={{ fontSize: "15px", lineHeight: 1.4 }}>
+          Here’s what I found
+        </strong>
+        <span
+          style={{
+            fontSize: "11px",
+            opacity: 0.55,
+            whiteSpace: "nowrap"
+          }}
+        >
+          Latest web results
+        </span>
       </div>
 
-      <div className="researchList">
+      <div
+        className="researchList"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px",
+          marginTop: "10px"
+        }}
+      >
         {results.map((result) => (
           <article
             className="researchCard"
             key={`${result.number}-${result.url || result.title}`}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "34px minmax(0, 1fr)",
+              columnGap: "12px",
+              alignItems: "start",
+              padding: "12px 0",
+              borderBottom: "1px solid rgba(0,0,0,0.07)",
+              minWidth: 0
+            }}
           >
-            <div className="researchNumber">
+            <div
+              className="researchNumber"
+              style={{
+                width: "30px",
+                height: "30px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#111",
+                color: "#fff",
+                fontSize: "10px",
+                fontWeight: 700
+              }}
+            >
               {String(result.number).padStart(2, "0")}
             </div>
 
-            <div className="researchBody">
-              <h3>{result.title}</h3>
+            <div
+              className="researchBody"
+              style={{
+                minWidth: 0,
+                overflow: "hidden"
+              }}
+            >
+              <h3
+                style={{
+                  margin: "0 0 5px",
+                  fontSize: "14px",
+                  lineHeight: 1.45,
+                  fontWeight: 650,
+                  overflowWrap: "anywhere"
+                }}
+              >
+                {result.title}
+              </h3>
 
-              {result.summary && <p>{result.summary}</p>}
+              {result.summary && (
+                <p
+                  style={{
+                    margin: "0 0 7px",
+                    fontSize: "12px",
+                    lineHeight: 1.5,
+                    opacity: 0.72,
+                    overflowWrap: "anywhere"
+                  }}
+                >
+                  {result.summary}
+                </p>
+              )}
 
-              <div className="researchMeta">
+              <div
+                className="researchMeta"
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "11px",
+                  opacity: 0.55
+                }}
+              >
                 <span>{result.source}</span>
-                {result.published && <span>· {result.published}</span>}
+                {result.published && (
+                  <>
+                    <span>·</span>
+                    <span>{result.published}</span>
+                  </>
+                )}
               </div>
 
               {result.url && (
@@ -177,6 +387,13 @@ function ResearchResults({ text }) {
                   target="_blank"
                   rel="noreferrer"
                   className="researchLink"
+                  style={{
+                    display: "inline-block",
+                    marginTop: "7px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    textDecoration: "none"
+                  }}
                 >
                   Open source ↗
                 </a>
@@ -186,8 +403,17 @@ function ResearchResults({ text }) {
         ))}
       </div>
 
-      <div className="researchDisclaimer">
-        Fetch found these live web results. The underlying claims have not been independently verified by Fetch.
+      <div
+        className="researchDisclaimer"
+        style={{
+          marginTop: "12px",
+          fontSize: "10px",
+          lineHeight: 1.45,
+          opacity: 0.48
+        }}
+      >
+        Fetch found these live web results. The underlying claims have not
+        been independently verified by Fetch.
       </div>
     </div>
   );
@@ -569,6 +795,98 @@ export default function App() {
 
   return (
     <div className="app">
+
+      <style>{`
+        .researchResults {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .researchIntro {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 12px;
+          padding-bottom: 2px;
+        }
+        .researchIntro strong {
+          font-size: 15px;
+          font-weight: 650;
+        }
+        .researchIntro span {
+          font-size: 11px;
+          opacity: .55;
+          white-space: nowrap;
+        }
+        .researchList {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .researchCard {
+          display: flex;
+          gap: 12px;
+          padding: 12px 13px;
+          border: 1px solid rgba(0,0,0,.08);
+          border-radius: 14px;
+          background: rgba(255,255,255,.72);
+          box-sizing: border-box;
+        }
+        .researchNumber {
+          flex: 0 0 28px;
+          height: 28px;
+          border-radius: 9px;
+          display: grid;
+          place-items: center;
+          background: #111;
+          color: #fff;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: .04em;
+        }
+        .researchBody {
+          min-width: 0;
+          flex: 1;
+        }
+        .researchBody h3 {
+          margin: 0 0 5px;
+          font-size: 14px;
+          line-height: 1.35;
+          font-weight: 650;
+          color: #111;
+        }
+        .researchBody p {
+          margin: 0 0 8px;
+          font-size: 12px;
+          line-height: 1.5;
+          color: rgba(0,0,0,.68);
+        }
+        .researchMeta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 5px;
+          font-size: 10px;
+          color: rgba(0,0,0,.5);
+          margin-bottom: 7px;
+        }
+        .researchLink {
+          display: inline-block;
+          font-size: 11px;
+          font-weight: 600;
+          color: #111;
+          text-decoration: none;
+        }
+        .researchLink:hover {
+          text-decoration: underline;
+        }
+        .researchDisclaimer {
+          padding-top: 2px;
+          font-size: 10px;
+          line-height: 1.45;
+          color: rgba(0,0,0,.45);
+        }
+      `}</style>
 
       <header>
         <button
