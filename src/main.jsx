@@ -39,6 +39,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [task, setTask] = useState(null);
+  const locationRef = useRef({ latitude: null, longitude: null });
 
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -75,10 +76,32 @@ export default function App() {
         /\b(buy|get|fetch|bring|pick up|purchase|deliver|order)\b/i.test(text) &&
         !/\b(news|restaurant|weather|remember|calendar|book a flight)\b/i.test(text);
 
-      let latitude = null;
-      let longitude = null;
+      let latitude = locationRef.current.latitude;
+      let longitude = locationRef.current.longitude;
 
-      if (isPhysicalRequest && navigator.geolocation) {
+      // A location-needed response is a continuation of the same physical
+      // task. Treat common replies such as "enabled", "allow", or "done"
+      // as permission to retry the original physical request.
+      const recentMessages = messages.slice(-6);
+      const waitingForLocation = recentMessages.some(
+        (item) =>
+          item?.role === "assistant" &&
+          /allow location|location access|nearby store/i.test(
+            String(item?.text || "")
+          )
+      );
+
+      const locationContinuation =
+        waitingForLocation &&
+        /^(enabled|enable|allowed|allow|done|yes|okay|ok|sure|go ahead)$/i.test(
+          text
+        );
+
+      const shouldRequestLocation =
+        (isPhysicalRequest || locationContinuation) &&
+        navigator.geolocation;
+
+      if (shouldRequestLocation) {
         const position = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
             resolve,
@@ -94,8 +117,25 @@ export default function App() {
         if (position?.coords) {
           latitude = position.coords.latitude;
           longitude = position.coords.longitude;
+          locationRef.current = { latitude, longitude };
         }
       }
+
+      const originalPhysicalRequest =
+        [...messages]
+          .reverse()
+          .find(
+            (item) =>
+              item?.role === "user" &&
+              /\b(buy|get|fetch|bring|pick up|purchase|deliver|order)\b/i.test(
+                String(item?.text || "")
+              )
+          )?.text || "";
+
+      const requestText =
+        locationContinuation && originalPhysicalRequest
+          ? originalPhysicalRequest
+          : text;
 
       const response = await fetch(
         "https://fetch-ten-olive.vercel.app/api/web/agent.mjs",
@@ -105,7 +145,7 @@ export default function App() {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            text,
+            text: requestText,
             conversationId: conversationRef.current,
             channel: "web",
             latitude,
