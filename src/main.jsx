@@ -4,40 +4,30 @@ import "./styles.css";
 
 const starters = [
   "Get me 2 KitKats and milk",
-  "Research the latest AI agent news",
-  "Find a good restaurant for tonight",
+  "Find the latest news about AI agents",
+  "Find me a good restaurant for tonight",
   "Remember that I prefer things after 7 PM"
 ];
 
 const makeId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-
-function isApprovalState(status, order = null) {
-  return (
-    status === "awaiting_customer_price_confirmation" ||
-    order?.status === "awaiting_customer_price_confirmation"
-  );
+function getResearchResults(message) {
+  const results = message?.meta?.results;
+  return Array.isArray(results) ? results.filter((item) => item?.title && item?.link) : [];
 }
 
-function hasQuotedOrder(order) {
-  return Boolean(
-    order &&
-    order.status === "awaiting_customer_price_confirmation" &&
-    order.total_amount !== null &&
-    order.total_amount !== undefined
-  );
-}
+function formatResearchDate(value) {
+  if (!value) return null;
 
-function formatMoney(value) {
-  const amount = Number(value || 0);
-  return `₹${amount.toFixed(2)}`;
-}
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
 
-function orderItems(order) {
-  if (Array.isArray(order?.items)) return order.items;
-  if (Array.isArray(order?.order_items)) return order.order_items;
-  return [];
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(date);
 }
 
 function getConversationId() {
@@ -199,9 +189,9 @@ export default function App() {
           meta: {
             status: data.status,
             network: route,
-            order: data.order || null,
-            execution: data.execution || null,
-            atc: data.atc || null
+            results: data?.execution?.results || [],
+            provider: data?.execution?.provider || null,
+            query: data?.execution?.query || null
           }
         }
       ]);
@@ -330,9 +320,9 @@ export default function App() {
                 meta: {
                   status: order.status,
                   network: route,
-                  order,
-                  execution: data.execution || null,
-                  atc: data.atc || null
+                  results: data?.execution?.results || [],
+                  provider: data?.execution?.provider || null,
+                  query: data?.execution?.query || null
                 }
               }
             ];
@@ -516,189 +506,74 @@ export default function App() {
                     className={`bubble ${message.role}`}
                   >
 
-                    {message.role === "assistant" &&
-                    (
-                      hasQuotedOrder(message.meta?.order) ||
-                      isApprovalState(
-                        message.meta?.status,
-                        message.meta?.order
-                      )
-                    ) &&
-                    message.meta?.order ? (
-                      <div
-                        style={{
-                          minWidth: "280px",
-                          maxWidth: "420px"
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontWeight: 700,
-                            fontSize: "15px",
-                            marginBottom: "14px"
-                          }}
-                        >
-                          Order ready for approval
+                    {getResearchResults(message).length > 0 ? (
+                      <div style={{ width: "100%" }}>
+                        <div style={{ marginBottom: "14px", fontWeight: 600 }}>
+                          {message.meta?.query
+                            ? `Here’s what I found for “${message.meta.query}”`
+                            : "Here’s what I found"}
                         </div>
 
-                        <div
-                          style={{
-                            display: "grid",
-                            gap: "8px",
-                            padding: "12px",
-                            borderRadius: "12px",
-                            background: "rgba(0,0,0,0.04)"
-                          }}
-                        >
-                          {orderItems(message.meta.order).map(
-                            (item, index) => (
+                        <div style={{ display: "grid", gap: "10px" }}>
+                          {getResearchResults(message).map((item, index) => {
+                            const date = formatResearchDate(item.published_at);
+
+                            return (
                               <div
-                                key={`${item.id || item.name || item.item || "item"}-${index}`}
+                                key={`${item.link}-${index}`}
                                 style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  gap: "16px",
-                                  fontSize: "14px"
+                                  padding: "12px 0",
+                                  borderTop: index === 0 ? "1px solid rgba(0,0,0,.10)" : "1px solid rgba(0,0,0,.08)"
                                 }}
                               >
-                                <span>
-                                  {item.quantity || 1} × {
-                                    item.name ||
-                                    item.item_name ||
-                                    item.item ||
-                                    item.product ||
-                                    "Item"
-                                  }
-                                </span>
-                                <strong>
-                                  {formatMoney(
-                                    item.total ??
-                                    item.line_total ??
-                                    (Number(item.unit_price || item.price || 0) *
-                                      Number(item.quantity || 1))
-                                  )}
-                                </strong>
+                                <div style={{ fontWeight: 600, lineHeight: 1.35 }}>
+                                  {index + 1}. {item.title}
+                                </div>
+
+                                {item.description && (
+                                  <div style={{ marginTop: "6px", lineHeight: 1.45, opacity: 0.78 }}>
+                                    {item.description}
+                                  </div>
+                                )}
+
+                                <div style={{ marginTop: "8px", fontSize: "12px", opacity: 0.62 }}>
+                                  {item.source || "Web"}
+                                  {date ? ` · ${date}` : ""}
+                                </div>
+
+                                <a
+                                  href={item.link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{
+                                    display: "inline-block",
+                                    marginTop: "5px",
+                                    fontSize: "12px",
+                                    fontWeight: 600,
+                                    textDecoration: "none"
+                                  }}
+                                >
+                                  Open source ↗
+                                </a>
                               </div>
-                            )
-                          )}
-
-                          <div
-                            style={{
-                              height: "1px",
-                              background: "rgba(0,0,0,0.10)",
-                              margin: "4px 0"
-                            }}
-                          />
-
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              fontSize: "14px"
-                            }}
-                          >
-                            <span>Products</span>
-                            <strong>
-                              {formatMoney(
-                                message.meta.order.subtotal ??
-                                message.meta.order.product_total ??
-                                message.meta.order.products_total ??
-                                0
-                              )}
-                            </strong>
-                          </div>
-
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              fontSize: "14px"
-                            }}
-                          >
-                            <span>Delivery</span>
-                            <strong>
-                              {formatMoney(
-                                message.meta.order.delivery_fee
-                              )}
-                            </strong>
-                          </div>
-
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              fontSize: "14px"
-                            }}
-                          >
-                            <span>Fetch fee</span>
-                            <strong>
-                              {formatMoney(
-                                message.meta.order.fetch_fee
-                              )}
-                            </strong>
-                          </div>
-
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              marginTop: "4px",
-                              fontSize: "16px"
-                            }}
-                          >
-                            <strong>Total</strong>
-                            <strong>
-                              {formatMoney(
-                                message.meta.order.total_amount
-                              )}
-                            </strong>
-                          </div>
+                            );
+                          })}
                         </div>
 
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => send("APPROVE")}
-                          style={{
-                            width: "100%",
-                            marginTop: "12px",
-                            padding: "12px 16px",
-                            border: 0,
-                            borderRadius: "10px",
-                            cursor: busy ? "not-allowed" : "pointer",
-                            fontWeight: 700,
-                            fontSize: "14px"
-                          }}
-                        >
-                          Approve {formatMoney(message.meta.order.total_amount)}
-                        </button>
-
-                        <small
-                          style={{
-                            display: "block",
-                            marginTop: "8px",
-                            opacity: 0.65,
-                            fontSize: "11px"
-                          }}
-                        >
-                          {message.meta.order.partner_store_name
-                            ? `Store: ${message.meta.order.partner_store_name}`
-                            : "Fetch will continue after your approval."}
-                        </small>
+                        <div style={{ marginTop: "14px", fontSize: "11px", opacity: 0.55 }}>
+                          Public web results · Fetch has not independently verified every claim.
+                        </div>
                       </div>
                     ) : (
-                      <>
-                        {message.text}
+                      message.text
+                    )}
 
-                        {message.meta?.network && (
-                          <small className="meta">
-                            {message.meta.status}
-                            {" · "}
-                            {message.meta.network}
-                          </small>
-                        )}
-                      </>
+                    {message.meta?.network && (
+                      <small className="meta">
+                        {message.meta.status}
+                        {" · "}
+                        {message.meta.network}
+                      </small>
                     )}
 
                   </div>
