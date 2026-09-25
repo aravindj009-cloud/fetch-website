@@ -25,179 +25,6 @@ function getConversationId() {
   return created;
 }
 
-
-
-function ResearchResultsCard({ intro, results }) {
-  return (
-    <div
-      className="researchResults"
-      style={{
-        width: "100%",
-        maxWidth: "680px",
-        minWidth: 0,
-        boxSizing: "border-box",
-      }}
-    >
-      <div
-        className="researchIntro"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "16px",
-          marginBottom: "16px",
-          width: "100%",
-          boxSizing: "border-box",
-          flexWrap: "wrap",
-        }}
-      >
-        <strong>{intro || "Here’s what I found"}</strong>
-        <span>Latest web results</span>
-      </div>
-
-      <div
-        className="researchList"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "0",
-          width: "100%",
-        }}
-      >
-        {results.map((result, index) => (
-          <article
-            className="researchCard"
-            key={result.link || index}
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "14px",
-              width: "100%",
-              maxWidth: "100%",
-              minWidth: 0,
-              boxSizing: "border-box",
-              padding: "15px 0",
-              borderTop: index === 0 ? "none" : "1px solid rgba(0,0,0,0.08)",
-            }}
-          >
-            <div
-              className="researchNumber"
-              style={{
-                flex: "0 0 32px",
-                width: "32px",
-                height: "32px",
-                borderRadius: "10px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "11px",
-                fontWeight: 700,
-                background: "#f1f1ef",
-                boxSizing: "border-box",
-              }}
-            >
-              {String(index + 1).padStart(2, "0")}
-            </div>
-
-            <div
-              className="researchBody"
-              style={{
-                flex: "1 1 auto",
-                minWidth: 0,
-                width: "calc(100% - 46px)",
-                overflow: "hidden",
-              }}
-            >
-              <h3
-                style={{
-                  margin: 0,
-                  fontSize: "15px",
-                  lineHeight: 1.45,
-                  fontWeight: 600,
-                  overflowWrap: "anywhere",
-                  wordBreak: "break-word",
-                }}
-              >
-                {result.title}
-              </h3>
-
-              {result.description && (
-                <p
-                  style={{
-                    margin: "7px 0 0",
-                    fontSize: "13px",
-                    lineHeight: 1.5,
-                    opacity: 0.72,
-                    overflowWrap: "anywhere",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {result.description.slice(0, 220)}
-                  {result.description.length > 220 ? "…" : ""}
-                </p>
-              )}
-
-              <div
-                className="researchMeta"
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  gap: "6px",
-                  marginTop: "8px",
-                  fontSize: "12px",
-                  lineHeight: 1.4,
-                  opacity: 0.62,
-                }}
-              >
-                <span>{result.source || "Web"}</span>
-                {result.published_display && (
-                  <>
-                    <span>·</span>
-                    <span>{result.published_display}</span>
-                  </>
-                )}
-              </div>
-
-              {result.link && (
-                <a
-                  href={result.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="researchLink"
-                  style={{
-                    display: "inline-block",
-                    marginTop: "8px",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    textDecoration: "none",
-                  }}
-                >
-                  Open source ↗
-                </a>
-              )}
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <div
-        className="researchDisclaimer"
-        style={{
-          marginTop: "12px",
-          paddingTop: "12px",
-          borderTop: "1px solid rgba(0,0,0,0.08)",
-          fontSize: "11px",
-          lineHeight: 1.45,
-          opacity: 0.55,
-        }}
-      >
-        Fetch found these live web results. The underlying claims have not been independently verified by Fetch.
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const [messages, setMessages] = useState([
     {
@@ -282,7 +109,30 @@ export default function App() {
             conversationId: conversationRef.current,
             channel: "web",
             latitude,
-            longitude
+            longitude,
+
+            /*
+             * Give Fetch the recent visible chat so follow-ups like
+             * "yes", "what do you mean?", "tell me more", etc. have context.
+             * Only the last 10 messages are sent.
+             */
+            conversationHistory: [
+              ...messages,
+              {
+                role: "user",
+                text
+              }
+            ]
+              .filter(
+                (message) =>
+                  message?.role === "user" ||
+                  message?.role === "assistant"
+              )
+              .slice(-10)
+              .map((message) => ({
+                role: message.role,
+                content: String(message.text || "").slice(0, 4000)
+              }))
           })
         }
       );
@@ -344,9 +194,7 @@ export default function App() {
           meta: {
             status: data.status,
             network: route
-          },
-          researchResults: data.execution?.results || null,
-          researchIntro: data.execution?.intro || null
+          }
         }
       ]);
 
@@ -654,21 +502,10 @@ export default function App() {
                   )}
 
                   <div
-                    className={`bubble ${message.role} ${
-                      message.role === "assistant" && message.researchResults?.length
-                        ? "researchBubble"
-                        : ""
-                    }`}
+                    className={`bubble ${message.role}`}
                   >
 
-                    {message.role === "assistant" && message.researchResults?.length ? (
-                      <ResearchResultsCard
-                        intro={message.researchIntro}
-                        results={message.researchResults}
-                      />
-                    ) : (
-                      message.text
-                    )}
+                    {message.text}
 
                     {message.meta?.network && (
                       <small className="meta">
