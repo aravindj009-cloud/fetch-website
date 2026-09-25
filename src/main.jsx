@@ -26,34 +26,14 @@ function getConversationId() {
 }
 
 
-function decodeEntities(value) {
-  return String(value || "")
-    .replace(/&nbsp;|&#160;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function getHost(url) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "Web source";
-  }
-}
-
 function normalizeResearchText(value) {
   return String(value || "")
-    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -67,175 +47,56 @@ function cleanResearchTitle(value) {
 
 function parseResearchResults(text) {
   const raw = normalizeResearchText(text);
+  if (!/here[’']s what i found/i.test(raw)) return null;
 
-  if (!/here[’']s what i found/i.test(raw)) {
-    return null;
-  }
-
-  const matches = [];
   const itemPattern = /(?:^|\s)(\d+)\.\s+([\s\S]*?)(?=\s+\d+\.\s+|$)/g;
-  let match;
+  const matches = [];
+  let m;
 
-  while ((match = itemPattern.exec(raw)) !== null) {
-    const number = Number(match[1]);
-    let content = normalizeResearchText(match[2]);
-
+  while ((m = itemPattern.exec(raw)) !== null) {
+    const number = Number(m[1]);
+    let content = normalizeResearchText(m[2]);
     if (!content) continue;
 
-    // Remove the long Google News tracking URL first.
     const urlMatch = content.match(/https?:\/\/[^\s]+/i);
-    const url = urlMatch
-      ? urlMatch[0].replace(/[),.;]+$/, "")
-      : "";
+    const url = urlMatch ? urlMatch[0].replace(/[),.;]+$/, "") : "";
 
-    if (url) {
-      content = content.replace(urlMatch[0], " ");
-    }
-
-    content = normalizeResearchText(content);
-
-    // The RSS result can contain publisher + repeated title + article context.
-    // Extract the date wherever it occurs, not only at the end.
     const dateMatch = content.match(
       /\b(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})\b/i
     );
-
     const published = dateMatch ? dateMatch[1] : "";
 
-    if (dateMatch) {
-      content = normalizeResearchText(
-        content.slice(0, dateMatch.index) +
-        " " +
-        content.slice(dateMatch.index + dateMatch[0].length)
+    const sourceMatch = content.match(/\bSource:\s*([^·|]+?)(?=\s*(?:·|$))/i);
+    let source = sourceMatch ? cleanResearchTitle(sourceMatch[1]) : "";
+
+    const titleSeparator = content.search(/\s+[–—-]\s+/);
+    let title = titleSeparator > 0
+      ? content.slice(0, titleSeparator).trim()
+      : content.split(/\bSource:/i)[0].trim();
+
+    title = cleanResearchTitle(title).slice(0, 180);
+
+    if (!source && titleSeparator > 0) {
+      const afterSeparator = content.slice(titleSeparator).replace(/^\s+[–—-]\s+/, "");
+      const sourceBeforeDate = afterSeparator.split(/\bSource:/i)[0];
+      source = cleanResearchTitle(
+        sourceBeforeDate
+          .replace(/\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\b.*$/i, "")
       );
-    }
-
-    // Pull an explicit Source marker if present.
-    let source = "";
-    const sourceMatch = content.match(
-      /\bSource:\s*([^|]+?)(?=\s+(?:Published|$))/i
-    );
-
-    if (sourceMatch) {
-      source = cleanResearchTitle(sourceMatch[1]);
-      content = normalizeResearchText(
-        content.replace(sourceMatch[0], " ")
-      );
-    }
-
-    // If the source marker was not present, infer a publisher from common
-    // domain fragments that Google News RSS places after the article text.
-    const sourceCandidates = [
-      "Financial Times",
-      "BBC",
-      "The New York Times",
-      "New York Times",
-      "TechCrunch",
-      "Business Insider",
-      "WIRED",
-      "Google",
-      "CNBC",
-      "The Hindu",
-      "Investing.com",
-      "PR Newswire",
-      "OpenAI",
-      "blog.google"
-    ];
-
-    if (!source) {
-      for (const candidate of sourceCandidates) {
-        const re = new RegExp(
-          `\\b${candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-          "i"
-        );
-
-        if (re.test(content)) {
-          source = candidate;
-          break;
-        }
-      }
     }
 
     if (!source && url) {
       try {
-        source = new URL(url).hostname
-          .replace(/^www\./, "")
-          .replace(/^news\./, "");
+        source = new URL(url).hostname.replace(/^www\./, "").replace(/^news\./, "");
       } catch {
         source = "Web";
       }
     }
 
-    // Remove obvious RSS/publisher noise.
-    content = content
-      .replace(/\bSource:\s*$/i, "")
-      .replace(/\bPublished:\s*$/i, "")
-      .replace(/\bSource\s*$/i, "")
-      .trim();
-
-    // Google News titles commonly look like:
-    // "Headline – Publisher Headline Publisher"
-    // Find the first separator and treat the first segment as the headline.
-    let title = content;
-    let summary = "";
-
-    const separator = content.search(/\s+[–—-]\s+/);
-
-    if (separator > 0) {
-      title = content.slice(0, separator).trim();
-      summary = content.slice(separator).replace(/^\s+[–—-]\s+/, "").trim();
-    }
-
-    // If no separator exists, use the first sentence as the title.
-    if (title.length > 180) {
-      const sentenceEnd = title.search(/[.!?]\s+/);
-
-      if (sentenceEnd > 40) {
-        summary = title.slice(sentenceEnd + 1).trim();
-        title = title.slice(0, sentenceEnd + 1).trim();
-      }
-    }
-
-    // Remove repeated title/publisher fragments from the summary.
-    if (summary) {
-      const titleLower = title.toLowerCase();
-
-      while (
-        summary.toLowerCase().startsWith(titleLower)
-      ) {
-        summary = summary.slice(title.length).trim();
-        summary = summary.replace(/^[–—-]\s*/, "");
-      }
-
-      if (source) {
-        const sourceIndex = summary.toLowerCase().lastIndexOf(
-          source.toLowerCase()
-        );
-
-        if (sourceIndex >= 0 && sourceIndex > 20) {
-          summary = summary.slice(0, sourceIndex).trim();
-        }
-      }
-    }
-
-    // Remove stray publisher names from the end of the title.
-    if (source) {
-      const sourceRegex = new RegExp(
-        `\\s+${source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-        "i"
-      );
-      title = title.replace(sourceRegex, "").trim();
-    }
-
-    title = cleanResearchTitle(title);
-    summary = cleanResearchTitle(summary);
-
     if (!title) continue;
-
     matches.push({
       number,
-      title: title.slice(0, 180),
-      summary: summary.slice(0, 280),
+      title,
       source: source || "Web",
       published,
       url
@@ -248,134 +109,52 @@ function parseResearchResults(text) {
 function ResearchResults({ text }) {
   const results = parseResearchResults(text);
 
-  if (!results) {
-    return <>{text}</>;
-  }
+  if (!results) return null;
 
   return (
     <div
       className="researchResults"
-      style={{
-        width: "100%",
-        maxWidth: "100%",
-        boxSizing: "border-box"
-      }}
+      style={{ width: "100%", maxWidth: "680px", minWidth: 0, boxSizing: "border-box" }}
     >
       <div
         className="researchIntro"
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          gap: "16px",
-          paddingBottom: "12px",
-          marginBottom: "4px",
-          borderBottom: "1px solid rgba(0,0,0,0.08)"
-        }}
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "16px", width: "100%", boxSizing: "border-box" }}
       >
-        <strong style={{ fontSize: "15px", lineHeight: 1.4 }}>
-          Here’s what I found
-        </strong>
-        <span
-          style={{
-            fontSize: "11px",
-            opacity: 0.55,
-            whiteSpace: "nowrap"
-          }}
-        >
-          Latest web results
-        </span>
+        <strong>Here’s what I found</strong>
+        <span>Latest web results</span>
       </div>
 
       <div
         className="researchList"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "10px",
-          marginTop: "10px"
-        }}
+        style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%" }}
       >
-        {results.map((result) => (
+        {results.map((result, index) => (
           <article
             className="researchCard"
-            key={`${result.number}-${result.url || result.title}`}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "34px minmax(0, 1fr)",
-              columnGap: "12px",
-              alignItems: "start",
-              padding: "12px 0",
-              borderBottom: "1px solid rgba(0,0,0,0.07)",
-              minWidth: 0
-            }}
+            key={`${result.number}-${result.title}-${index}`}
+            style={{ display: "flex", alignItems: "flex-start", gap: "14px", width: "100%", boxSizing: "border-box", padding: "14px 0", borderTop: index === 0 ? "none" : "1px solid rgba(0,0,0,0.08)" }}
           >
             <div
               className="researchNumber"
-              style={{
-                width: "30px",
-                height: "30px",
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "#111",
-                color: "#fff",
-                fontSize: "10px",
-                fontWeight: 700
-              }}
+              style={{ flex: "0 0 32px", width: "32px", height: "32px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700, background: "#f1f1ef", boxSizing: "border-box" }}
             >
               {String(result.number).padStart(2, "0")}
             </div>
 
             <div
               className="researchBody"
-              style={{
-                minWidth: 0,
-                overflow: "hidden"
-              }}
+              style={{ flex: "1 1 auto", minWidth: 0, width: "calc(100% - 46px)" }}
             >
-              <h3
-                style={{
-                  margin: "0 0 5px",
-                  fontSize: "14px",
-                  lineHeight: 1.45,
-                  fontWeight: 650,
-                  overflowWrap: "anywhere"
-                }}
-              >
-                {result.title}
-              </h3>
-
-              {result.summary && (
-                <p
-                  style={{
-                    margin: "0 0 7px",
-                    fontSize: "12px",
-                    lineHeight: 1.5,
-                    opacity: 0.72,
-                    overflowWrap: "anywhere"
-                  }}
-                >
-                  {result.summary}
-                </p>
-              )}
+              <h3 style={{ margin: 0, fontSize: "15px", lineHeight: 1.45, fontWeight: 600, overflowWrap: "anywhere" }}>{result.title}</h3>
 
               <div
                 className="researchMeta"
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  gap: "6px",
-                  fontSize: "11px",
-                  opacity: 0.55
-                }}
+                style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px", marginTop: "7px", fontSize: "12px", lineHeight: 1.4, opacity: 0.62 }}
               >
                 <span>{result.source}</span>
                 {result.published && (
                   <>
-                    <span>·</span>
+                    <i>·</i>
                     <span>{result.published}</span>
                   </>
                 )}
@@ -383,17 +162,11 @@ function ResearchResults({ text }) {
 
               {result.url && (
                 <a
+                  className="researchLink"
+                  style={{ display: "inline-block", marginTop: "8px", fontSize: "12px", fontWeight: 600, textDecoration: "none", overflowWrap: "anywhere" }}
                   href={result.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="researchLink"
-                  style={{
-                    display: "inline-block",
-                    marginTop: "7px",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    textDecoration: "none"
-                  }}
                 >
                   Open source ↗
                 </a>
@@ -401,19 +174,6 @@ function ResearchResults({ text }) {
             </div>
           </article>
         ))}
-      </div>
-
-      <div
-        className="researchDisclaimer"
-        style={{
-          marginTop: "12px",
-          fontSize: "10px",
-          lineHeight: 1.45,
-          opacity: 0.48
-        }}
-      >
-        Fetch found these live web results. The underlying claims have not
-        been independently verified by Fetch.
       </div>
     </div>
   );
@@ -796,98 +556,6 @@ export default function App() {
   return (
     <div className="app">
 
-      <style>{`
-        .researchResults {
-          width: 100%;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-        .researchIntro {
-          display: flex;
-          align-items: baseline;
-          justify-content: space-between;
-          gap: 12px;
-          padding-bottom: 2px;
-        }
-        .researchIntro strong {
-          font-size: 15px;
-          font-weight: 650;
-        }
-        .researchIntro span {
-          font-size: 11px;
-          opacity: .55;
-          white-space: nowrap;
-        }
-        .researchList {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        .researchCard {
-          display: flex;
-          gap: 12px;
-          padding: 12px 13px;
-          border: 1px solid rgba(0,0,0,.08);
-          border-radius: 14px;
-          background: rgba(255,255,255,.72);
-          box-sizing: border-box;
-        }
-        .researchNumber {
-          flex: 0 0 28px;
-          height: 28px;
-          border-radius: 9px;
-          display: grid;
-          place-items: center;
-          background: #111;
-          color: #fff;
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: .04em;
-        }
-        .researchBody {
-          min-width: 0;
-          flex: 1;
-        }
-        .researchBody h3 {
-          margin: 0 0 5px;
-          font-size: 14px;
-          line-height: 1.35;
-          font-weight: 650;
-          color: #111;
-        }
-        .researchBody p {
-          margin: 0 0 8px;
-          font-size: 12px;
-          line-height: 1.5;
-          color: rgba(0,0,0,.68);
-        }
-        .researchMeta {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 5px;
-          font-size: 10px;
-          color: rgba(0,0,0,.5);
-          margin-bottom: 7px;
-        }
-        .researchLink {
-          display: inline-block;
-          font-size: 11px;
-          font-weight: 600;
-          color: #111;
-          text-decoration: none;
-        }
-        .researchLink:hover {
-          text-decoration: underline;
-        }
-        .researchDisclaimer {
-          padding-top: 2px;
-          font-size: 10px;
-          line-height: 1.45;
-          color: rgba(0,0,0,.45);
-        }
-      `}</style>
-
       <header>
         <button
           className="brand"
@@ -965,10 +633,14 @@ export default function App() {
                   )}
 
                   <div
-                    className={`bubble ${message.role}`}
+                    className={`bubble ${message.role} ${
+                      message.role === "assistant" && parseResearchResults(message.text)
+                        ? "researchBubble"
+                        : ""
+                    }`}
                   >
 
-                    {message.role === "assistant" ? (
+                    {message.role === "assistant" && parseResearchResults(message.text) ? (
                       <ResearchResults text={message.text} />
                     ) : (
                       message.text
