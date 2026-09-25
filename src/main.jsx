@@ -4,38 +4,14 @@ import "./styles.css";
 
 const starters = [
   "Get me 2 KitKats and milk",
-  "Find the latest news about AI agents",
-  "Find me a good restaurant for tonight",
+  "Research the latest AI agent news",
+  "Find a good restaurant for tonight",
   "Remember that I prefer things after 7 PM"
 ];
 
 const makeId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-function getConversationId() {
-  const existing = localStorage.getItem("fetch_conversation_id");
-
-  if (existing) {
-    return existing;
-  }
-
-  const created = `web:${makeId()}`;
-  localStorage.setItem("fetch_conversation_id", created);
-
-  return created;
-}
-
-function formatRupees(value) {
-  const amount = Number(value);
-
-  if (!Number.isFinite(amount)) {
-    return "₹0";
-  }
-
-  return `₹${amount.toLocaleString("en-IN", {
-    maximumFractionDigits: 2
-  })}`;
-}
 
 function isApprovalState(status, order = null) {
   return (
@@ -51,6 +27,30 @@ function hasQuotedOrder(order) {
     order.total_amount !== null &&
     order.total_amount !== undefined
   );
+}
+
+function formatMoney(value) {
+  const amount = Number(value || 0);
+  return `₹${amount.toFixed(2)}`;
+}
+
+function orderItems(order) {
+  if (Array.isArray(order?.items)) return order.items;
+  if (Array.isArray(order?.order_items)) return order.order_items;
+  return [];
+}
+
+function getConversationId() {
+  const existing = localStorage.getItem("fetch_conversation_id");
+
+  if (existing) {
+    return existing;
+  }
+
+  const created = `web:${makeId()}`;
+  localStorage.setItem("fetch_conversation_id", created);
+
+  return created;
 }
 
 export default function App() {
@@ -72,9 +72,8 @@ export default function App() {
   const recognitionRef = useRef(null);
   const conversationRef = useRef(getConversationId());
 
-  async function send(rawText, displayText = rawText) {
+  async function send(rawText) {
     const text = String(rawText || "").trim();
-    const visibleText = String(displayText || text).trim();
 
     if (!text || busy) {
       return;
@@ -85,7 +84,7 @@ export default function App() {
       {
         id: makeId(),
         role: "user",
-        text: visibleText,
+        text,
         meta: null
       }
     ]);
@@ -186,7 +185,7 @@ export default function App() {
         status: data.status,
         network: route,
         workflowId: data.workflow_id,
-        orderId: data.orderId || data.order_id || null
+        orderId: data.order_id || null
       });
 
       setMessages((current) => [
@@ -200,15 +199,15 @@ export default function App() {
           meta: {
             status: data.status,
             network: route,
-            order: data.order || null
+            order: data.order || null,
+            execution: data.execution || null,
+            atc: data.atc || null
           }
         }
       ]);
 
-      const resolvedOrderId = data.orderId || data.order_id || null;
-
-      if (resolvedOrderId) {
-        watchOrder(resolvedOrderId, text);
+      if (data.order_id) {
+        watchOrder(data.order_id, text);
       }
     } catch (error) {
       console.error("FETCH UI ERROR", error);
@@ -331,7 +330,9 @@ export default function App() {
                 meta: {
                   status: order.status,
                   network: route,
-                  order
+                  order,
+                  execution: data.execution || null,
+                  atc: data.atc || null
                 }
               }
             ];
@@ -524,113 +525,180 @@ export default function App() {
                       )
                     ) &&
                     message.meta?.order ? (
-                      <>
-                        <div style={{
-                          fontWeight: 600,
-                          marginBottom: 12
-                        }}>
-                          The partner store has confirmed your order.
+                      <div
+                        style={{
+                          minWidth: "280px",
+                          maxWidth: "420px"
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: "15px",
+                            marginBottom: "14px"
+                          }}
+                        >
+                          Order ready for approval
                         </div>
 
-                        <div style={{
-                          border: "1px solid #e5e5e5",
-                          borderRadius: 14,
-                          padding: 14,
-                          background: "#fafafa",
-                          marginBottom: 12
-                        }}>
-                          <div style={{
-                            fontSize: 12,
-                            letterSpacing: "0.08em",
-                            textTransform: "uppercase",
-                            color: "#777",
-                            marginBottom: 10
-                          }}>
-                            Order summary
-                          </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gap: "8px",
+                            padding: "12px",
+                            borderRadius: "12px",
+                            background: "rgba(0,0,0,0.04)"
+                          }}
+                        >
+                          {orderItems(message.meta.order).map(
+                            (item, index) => (
+                              <div
+                                key={`${item.id || item.name || item.item || "item"}-${index}`}
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  gap: "16px",
+                                  fontSize: "14px"
+                                }}
+                              >
+                                <span>
+                                  {item.quantity || 1} × {
+                                    item.name ||
+                                    item.item_name ||
+                                    item.item ||
+                                    item.product ||
+                                    "Item"
+                                  }
+                                </span>
+                                <strong>
+                                  {formatMoney(
+                                    item.total ??
+                                    item.line_total ??
+                                    (Number(item.unit_price || item.price || 0) *
+                                      Number(item.quantity || 1))
+                                  )}
+                                </strong>
+                              </div>
+                            )
+                          )}
 
-                          <div style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 16,
-                            marginBottom: 7
-                          }}>
+                          <div
+                            style={{
+                              height: "1px",
+                              background: "rgba(0,0,0,0.10)",
+                              margin: "4px 0"
+                            }}
+                          />
+
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              fontSize: "14px"
+                            }}
+                          >
                             <span>Products</span>
-                            <strong>{formatRupees(message.meta.order.item_total)}</strong>
+                            <strong>
+                              {formatMoney(
+                                message.meta.order.subtotal ??
+                                message.meta.order.product_total ??
+                                message.meta.order.products_total ??
+                                0
+                              )}
+                            </strong>
                           </div>
 
-                          <div style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 16,
-                            marginBottom: 7
-                          }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              fontSize: "14px"
+                            }}
+                          >
                             <span>Delivery</span>
-                            <strong>{formatRupees(message.meta.order.delivery_fee)}</strong>
+                            <strong>
+                              {formatMoney(
+                                message.meta.order.delivery_fee
+                              )}
+                            </strong>
                           </div>
 
-                          <div style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 16,
-                            marginBottom: 10
-                          }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              fontSize: "14px"
+                            }}
+                          >
                             <span>Fetch fee</span>
-                            <strong>{formatRupees(message.meta.order.fetch_fee)}</strong>
+                            <strong>
+                              {formatMoney(
+                                message.meta.order.fetch_fee
+                              )}
+                            </strong>
                           </div>
 
-                          <div style={{
-                            borderTop: "1px solid #e5e5e5",
-                            paddingTop: 10,
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 16,
-                            fontSize: 16
-                          }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              marginTop: "4px",
+                              fontSize: "16px"
+                            }}
+                          >
                             <strong>Total</strong>
-                            <strong>{formatRupees(message.meta.order.total_amount)}</strong>
+                            <strong>
+                              {formatMoney(
+                                message.meta.order.total_amount
+                              )}
+                            </strong>
                           </div>
-                        </div>
-
-                        <div style={{
-                          fontSize: 13,
-                          lineHeight: 1.5,
-                          marginBottom: 12
-                        }}>
-                          Please approve the total to continue.
                         </div>
 
                         <button
                           type="button"
-                          onClick={() =>
-                            send("APPROVE", "Approved")
-                          }
                           disabled={busy}
+                          onClick={() => send("APPROVE")}
                           style={{
                             width: "100%",
+                            marginTop: "12px",
+                            padding: "12px 16px",
                             border: 0,
-                            borderRadius: 12,
-                            padding: "12px 14px",
-                            background: "#111",
-                            color: "#fff",
-                            fontWeight: 600,
-                            cursor: busy ? "default" : "pointer",
-                            opacity: busy ? 0.55 : 1
+                            borderRadius: "10px",
+                            cursor: busy ? "not-allowed" : "pointer",
+                            fontWeight: 700,
+                            fontSize: "14px"
                           }}
                         >
-                          Approve {formatRupees(message.meta.order.total_amount)}
+                          Approve {formatMoney(message.meta.order.total_amount)}
                         </button>
-                      </>
-                    ) : (
-                      message.text
-                    )}
 
-                    {message.meta?.network && (
-                      <small className="meta">
-                        {message.meta.status}
-                        {" · "}
-                        {message.meta.network}
-                      </small>
+                        <small
+                          style={{
+                            display: "block",
+                            marginTop: "8px",
+                            opacity: 0.65,
+                            fontSize: "11px"
+                          }}
+                        >
+                          {message.meta.order.partner_store_name
+                            ? `Store: ${message.meta.order.partner_store_name}`
+                            : "Fetch will continue after your approval."}
+                        </small>
+                      </div>
+                    ) : (
+                      <>
+                        {message.text}
+
+                        {message.meta?.network && (
+                          <small className="meta">
+                            {message.meta.status}
+                            {" · "}
+                            {message.meta.network}
+                          </small>
+                        )}
+                      </>
                     )}
 
                   </div>
