@@ -26,147 +26,152 @@ function getConversationId() {
 }
 
 
-function normalizeResearchText(value) {
-  return String(value || "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
-function cleanResearchTitle(value) {
-  return normalizeResearchText(value)
-    .replace(/^[-–—:|]+\s*/, "")
-    .replace(/\s*[-–—:|]+\s*$/, "")
-    .trim();
-}
-
-function parseResearchResults(text) {
-  const raw = normalizeResearchText(text);
-  if (!/here[’']s what i found/i.test(raw)) return null;
-
-  const itemPattern = /(?:^|\s)(\d+)\.\s+([\s\S]*?)(?=\s+\d+\.\s+|$)/g;
-  const matches = [];
-  let m;
-
-  while ((m = itemPattern.exec(raw)) !== null) {
-    const number = Number(m[1]);
-    let content = normalizeResearchText(m[2]);
-    if (!content) continue;
-
-    const urlMatch = content.match(/https?:\/\/[^\s]+/i);
-    const url = urlMatch ? urlMatch[0].replace(/[),.;]+$/, "") : "";
-
-    const dateMatch = content.match(
-      /\b(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})\b/i
-    );
-    const published = dateMatch ? dateMatch[1] : "";
-
-    const sourceMatch = content.match(/\bSource:\s*([^·|]+?)(?=\s*(?:·|$))/i);
-    let source = sourceMatch ? cleanResearchTitle(sourceMatch[1]) : "";
-
-    const titleSeparator = content.search(/\s+[–—-]\s+/);
-    let title = titleSeparator > 0
-      ? content.slice(0, titleSeparator).trim()
-      : content.split(/\bSource:/i)[0].trim();
-
-    title = cleanResearchTitle(title).slice(0, 180);
-
-    if (!source && titleSeparator > 0) {
-      const afterSeparator = content.slice(titleSeparator).replace(/^\s+[–—-]\s+/, "");
-      const sourceBeforeDate = afterSeparator.split(/\bSource:/i)[0];
-      source = cleanResearchTitle(
-        sourceBeforeDate
-          .replace(/\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\b.*$/i, "")
-      );
-    }
-
-    if (!source && url) {
-      try {
-        source = new URL(url).hostname.replace(/^www\./, "").replace(/^news\./, "");
-      } catch {
-        source = "Web";
-      }
-    }
-
-    if (!title) continue;
-    matches.push({
-      number,
-      title,
-      source: source || "Web",
-      published,
-      url
-    });
-  }
-
-  return matches.length ? matches.slice(0, 8) : null;
-}
-
-function ResearchResults({ text }) {
-  const results = parseResearchResults(text);
-
-  if (!results) return null;
-
+function ResearchResultsCard({ intro, results }) {
   return (
     <div
       className="researchResults"
-      style={{ width: "100%", maxWidth: "680px", minWidth: 0, boxSizing: "border-box" }}
+      style={{
+        width: "100%",
+        maxWidth: "680px",
+        minWidth: 0,
+        boxSizing: "border-box",
+      }}
     >
       <div
         className="researchIntro"
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "16px", width: "100%", boxSizing: "border-box" }}
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "16px",
+          marginBottom: "16px",
+          width: "100%",
+          boxSizing: "border-box",
+          flexWrap: "wrap",
+        }}
       >
-        <strong>Here’s what I found</strong>
+        <strong>{intro || "Here’s what I found"}</strong>
         <span>Latest web results</span>
       </div>
 
       <div
         className="researchList"
-        style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%" }}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "0",
+          width: "100%",
+        }}
       >
         {results.map((result, index) => (
           <article
             className="researchCard"
-            key={`${result.number}-${result.title}-${index}`}
-            style={{ display: "flex", alignItems: "flex-start", gap: "14px", width: "100%", boxSizing: "border-box", padding: "14px 0", borderTop: index === 0 ? "none" : "1px solid rgba(0,0,0,0.08)" }}
+            key={result.link || index}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "14px",
+              width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
+              boxSizing: "border-box",
+              padding: "15px 0",
+              borderTop: index === 0 ? "none" : "1px solid rgba(0,0,0,0.08)",
+            }}
           >
             <div
               className="researchNumber"
-              style={{ flex: "0 0 32px", width: "32px", height: "32px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700, background: "#f1f1ef", boxSizing: "border-box" }}
+              style={{
+                flex: "0 0 32px",
+                width: "32px",
+                height: "32px",
+                borderRadius: "10px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "11px",
+                fontWeight: 700,
+                background: "#f1f1ef",
+                boxSizing: "border-box",
+              }}
             >
-              {String(result.number).padStart(2, "0")}
+              {String(index + 1).padStart(2, "0")}
             </div>
 
             <div
               className="researchBody"
-              style={{ flex: "1 1 auto", minWidth: 0, width: "calc(100% - 46px)" }}
+              style={{
+                flex: "1 1 auto",
+                minWidth: 0,
+                width: "calc(100% - 46px)",
+                overflow: "hidden",
+              }}
             >
-              <h3 style={{ margin: 0, fontSize: "15px", lineHeight: 1.45, fontWeight: 600, overflowWrap: "anywhere" }}>{result.title}</h3>
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "15px",
+                  lineHeight: 1.45,
+                  fontWeight: 600,
+                  overflowWrap: "anywhere",
+                  wordBreak: "break-word",
+                }}
+              >
+                {result.title}
+              </h3>
+
+              {result.description && (
+                <p
+                  style={{
+                    margin: "7px 0 0",
+                    fontSize: "13px",
+                    lineHeight: 1.5,
+                    opacity: 0.72,
+                    overflowWrap: "anywhere",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {result.description.slice(0, 220)}
+                  {result.description.length > 220 ? "…" : ""}
+                </p>
+              )}
 
               <div
                 className="researchMeta"
-                style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px", marginTop: "7px", fontSize: "12px", lineHeight: 1.4, opacity: 0.62 }}
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: "6px",
+                  marginTop: "8px",
+                  fontSize: "12px",
+                  lineHeight: 1.4,
+                  opacity: 0.62,
+                }}
               >
-                <span>{result.source}</span>
-                {result.published && (
+                <span>{result.source || "Web"}</span>
+                {result.published_display && (
                   <>
-                    <i>·</i>
-                    <span>{result.published}</span>
+                    <span>·</span>
+                    <span>{result.published_display}</span>
                   </>
                 )}
               </div>
 
-              {result.url && (
+              {result.link && (
                 <a
-                  className="researchLink"
-                  style={{ display: "inline-block", marginTop: "8px", fontSize: "12px", fontWeight: 600, textDecoration: "none", overflowWrap: "anywhere" }}
-                  href={result.url}
+                  href={result.link}
                   target="_blank"
                   rel="noreferrer"
+                  className="researchLink"
+                  style={{
+                    display: "inline-block",
+                    marginTop: "8px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    textDecoration: "none",
+                  }}
                 >
                   Open source ↗
                 </a>
@@ -174,6 +179,20 @@ function ResearchResults({ text }) {
             </div>
           </article>
         ))}
+      </div>
+
+      <div
+        className="researchDisclaimer"
+        style={{
+          marginTop: "12px",
+          paddingTop: "12px",
+          borderTop: "1px solid rgba(0,0,0,0.08)",
+          fontSize: "11px",
+          lineHeight: 1.45,
+          opacity: 0.55,
+        }}
+      >
+        Fetch found these live web results. The underlying claims have not been independently verified by Fetch.
       </div>
     </div>
   );
@@ -325,7 +344,9 @@ export default function App() {
           meta: {
             status: data.status,
             network: route
-          }
+          },
+          researchResults: data.execution?.results || null,
+          researchIntro: data.execution?.intro || null
         }
       ]);
 
@@ -634,14 +655,17 @@ export default function App() {
 
                   <div
                     className={`bubble ${message.role} ${
-                      message.role === "assistant" && parseResearchResults(message.text)
+                      message.role === "assistant" && message.researchResults?.length
                         ? "researchBubble"
                         : ""
                     }`}
                   >
 
-                    {message.role === "assistant" && parseResearchResults(message.text) ? (
-                      <ResearchResults text={message.text} />
+                    {message.role === "assistant" && message.researchResults?.length ? (
+                      <ResearchResultsCard
+                        intro={message.researchIntro}
+                        results={message.researchResults}
+                      />
                     ) : (
                       message.text
                     )}
