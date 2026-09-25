@@ -12,24 +12,6 @@ const starters = [
 const makeId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-function getResearchResults(message) {
-  const results = message?.meta?.results;
-  return Array.isArray(results) ? results.filter((item) => item?.title && item?.link) : [];
-}
-
-function formatResearchDate(value) {
-  if (!value) return null;
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric"
-  }).format(date);
-}
-
 function getConversationId() {
   const existing = localStorage.getItem("fetch_conversation_id");
 
@@ -41,6 +23,150 @@ function getConversationId() {
   localStorage.setItem("fetch_conversation_id", created);
 
   return created;
+}
+
+
+function decodeEntities(value) {
+  return String(value || "")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "Web source";
+  }
+}
+
+function parseResearchResults(text) {
+  const raw = decodeEntities(text);
+
+  if (!/here[’']s what i found for/i.test(raw) || !/\b1\.\s/.test(raw)) {
+    return null;
+  }
+
+  const matches = [];
+  const pattern = /(?:^|\s)(\d+)\.\s+([\s\S]*?)(?=\s+\d+\.\s+|$)/g;
+  let match;
+
+  while ((match = pattern.exec(raw)) !== null) {
+    const number = Number(match[1]);
+    let content = match[2].trim();
+
+    const urlMatch = content.match(/https?:\/\/[^\s]+/i);
+    const url = urlMatch ? urlMatch[0].replace(/[),.;]+$/, "") : "";
+
+    if (url) {
+      content = content.replace(urlMatch[0], " ");
+    }
+
+    const publishedMatch = content.match(/\s*[·|-]\s*(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})\s*$/i);
+    let published = publishedMatch ? publishedMatch[1] : "";
+    let source = "";
+
+    if (publishedMatch) {
+      content = content.slice(0, publishedMatch.index).trim();
+    }
+
+    const sourceMarker = content.match(/\s+Source:\s*(.+)$/i);
+    if (sourceMarker) {
+      source = sourceMarker[1].trim();
+      content = content.slice(0, sourceMarker.index).trim();
+    }
+
+    if (!source && url) {
+      source = getHost(url);
+    }
+
+    // Google News RSS sometimes repeats the publisher/headline in the RSS title.
+    // Keep the first meaningful headline and use the remaining text as context.
+    const titleParts = content.split(/\s+–\s+|\s+—\s+|\s+-\s+/);
+    let title = titleParts[0].trim();
+    let summary = titleParts.slice(1).join(" – ").trim();
+
+    if (!title) {
+      title = content;
+    }
+
+    // Collapse repeated headline/source fragments without hiding useful text.
+    if (summary.toLowerCase().startsWith(title.toLowerCase())) {
+      summary = summary.slice(title.length).trim();
+    }
+
+    summary = summary.replace(/^Source:\s*/i, "").trim();
+
+    matches.push({
+      number,
+      title: title.slice(0, 180),
+      summary: summary.slice(0, 320),
+      source: source || "Web",
+      published,
+      url
+    });
+  }
+
+  return matches.length ? matches.slice(0, 8) : null;
+}
+
+function ResearchResults({ text }) {
+  const results = parseResearchResults(text);
+
+  if (!results) {
+    return <>{text}</>;
+  }
+
+  return (
+    <div className="researchResults">
+      <div className="researchIntro">
+        <strong>Here’s what I found</strong>
+        <span>Latest web results</span>
+      </div>
+
+      <div className="researchList">
+        {results.map((result) => (
+          <article className="researchCard" key={`${result.number}-${result.url || result.title}`}>
+            <div className="researchNumber">{String(result.number).padStart(2, "0")}</div>
+
+            <div className="researchBody">
+              <h3>{result.title}</h3>
+
+              {result.summary && (
+                <p>{result.summary}</p>
+              )}
+
+              <div className="researchMeta">
+                <span>{result.source}</span>
+                {result.published && <span>· {result.published}</span>}
+              </div>
+
+              {result.url && (
+                <a
+                  href={result.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="researchLink"
+                >
+                  Open source ↗
+                </a>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="researchDisclaimer">
+        Fetch found these live web results. The underlying claims have not been independently verified by Fetch.
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -188,10 +314,7 @@ export default function App() {
             "I’m working on that.",
           meta: {
             status: data.status,
-            network: route,
-            results: data?.execution?.results || [],
-            provider: data?.execution?.provider || null,
-            query: data?.execution?.query || null
+            network: route
           }
         }
       ]);
@@ -319,10 +442,7 @@ export default function App() {
                 text: message,
                 meta: {
                   status: order.status,
-                  network: route,
-                  results: data?.execution?.results || [],
-                  provider: data?.execution?.provider || null,
-                  query: data?.execution?.query || null
+                  network: route
                 }
               }
             ];
@@ -426,6 +546,98 @@ export default function App() {
   return (
     <div className="app">
 
+      <style>{`
+        .researchResults {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .researchIntro {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 12px;
+          padding-bottom: 2px;
+        }
+        .researchIntro strong {
+          font-size: 15px;
+          font-weight: 650;
+        }
+        .researchIntro span {
+          font-size: 11px;
+          opacity: .55;
+          white-space: nowrap;
+        }
+        .researchList {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .researchCard {
+          display: flex;
+          gap: 12px;
+          padding: 12px 13px;
+          border: 1px solid rgba(0,0,0,.08);
+          border-radius: 14px;
+          background: rgba(255,255,255,.72);
+          box-sizing: border-box;
+        }
+        .researchNumber {
+          flex: 0 0 28px;
+          height: 28px;
+          border-radius: 9px;
+          display: grid;
+          place-items: center;
+          background: #111;
+          color: #fff;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: .04em;
+        }
+        .researchBody {
+          min-width: 0;
+          flex: 1;
+        }
+        .researchBody h3 {
+          margin: 0 0 5px;
+          font-size: 14px;
+          line-height: 1.35;
+          font-weight: 650;
+          color: #111;
+        }
+        .researchBody p {
+          margin: 0 0 8px;
+          font-size: 12px;
+          line-height: 1.5;
+          color: rgba(0,0,0,.68);
+        }
+        .researchMeta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 5px;
+          font-size: 10px;
+          color: rgba(0,0,0,.5);
+          margin-bottom: 7px;
+        }
+        .researchLink {
+          display: inline-block;
+          font-size: 11px;
+          font-weight: 600;
+          color: #111;
+          text-decoration: none;
+        }
+        .researchLink:hover {
+          text-decoration: underline;
+        }
+        .researchDisclaimer {
+          padding-top: 2px;
+          font-size: 10px;
+          line-height: 1.45;
+          color: rgba(0,0,0,.45);
+        }
+      `}</style>
+
       <header>
         <button
           className="brand"
@@ -506,64 +718,8 @@ export default function App() {
                     className={`bubble ${message.role}`}
                   >
 
-                    {getResearchResults(message).length > 0 ? (
-                      <div style={{ width: "100%" }}>
-                        <div style={{ marginBottom: "14px", fontWeight: 600 }}>
-                          {message.meta?.query
-                            ? `Here’s what I found for “${message.meta.query}”`
-                            : "Here’s what I found"}
-                        </div>
-
-                        <div style={{ display: "grid", gap: "10px" }}>
-                          {getResearchResults(message).map((item, index) => {
-                            const date = formatResearchDate(item.published_at);
-
-                            return (
-                              <div
-                                key={`${item.link}-${index}`}
-                                style={{
-                                  padding: "12px 0",
-                                  borderTop: index === 0 ? "1px solid rgba(0,0,0,.10)" : "1px solid rgba(0,0,0,.08)"
-                                }}
-                              >
-                                <div style={{ fontWeight: 600, lineHeight: 1.35 }}>
-                                  {index + 1}. {item.title}
-                                </div>
-
-                                {item.description && (
-                                  <div style={{ marginTop: "6px", lineHeight: 1.45, opacity: 0.78 }}>
-                                    {item.description}
-                                  </div>
-                                )}
-
-                                <div style={{ marginTop: "8px", fontSize: "12px", opacity: 0.62 }}>
-                                  {item.source || "Web"}
-                                  {date ? ` · ${date}` : ""}
-                                </div>
-
-                                <a
-                                  href={item.link}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{
-                                    display: "inline-block",
-                                    marginTop: "5px",
-                                    fontSize: "12px",
-                                    fontWeight: 600,
-                                    textDecoration: "none"
-                                  }}
-                                >
-                                  Open source ↗
-                                </a>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        <div style={{ marginTop: "14px", fontSize: "11px", opacity: 0.55 }}>
-                          Public web results · Fetch has not independently verified every claim.
-                        </div>
-                      </div>
+                    {message.role === "assistant" ? (
+                      <ResearchResults text={message.text} />
                     ) : (
                       message.text
                     )}
