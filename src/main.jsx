@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -11,37 +11,6 @@ const starters = [
 
 const makeId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-// Keep the frontend portable between the public site and the backend Vercel project.
-// Set VITE_FETCH_API_BASE in Vercel if the backend URL changes.
-const FETCH_API_BASE =
-  import.meta.env.VITE_FETCH_API_BASE ||
-  "https://fetch-ten-olive.vercel.app";
-
-const FETCH_AGENT_URL = `${FETCH_API_BASE.replace(/\/$/, "")}/api/web/agent.mjs`;
-
-function looksLikePhysicalRequest(text) {
-  const value = String(text || "");
-
-  const acquisitionVerb =
-    /\b(buy|get|fetch|bring|pick up|pickup|purchase|deliver|delivery|order|send|source|need)\b/i.test(value);
-
-  const physicalObject =
-    /\b(item|product|goods|grocery|groceries|medicine|medicines|food|drink|drinks|snack|snacks|pack|packs|box|boxes|bottle|bottles|piece|pieces|unit|units|shopping|supplies|stuff)\b/i.test(value);
-
-  const deliveryCue =
-    /\b(deliver|delivery|delivered|my address|our address|near me|nearby|at home|to my home)\b/i.test(value);
-
-  const quantityObjectCue =
-    /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+[a-z][a-z-]*\b/i.test(value) &&
-    physicalObject;
-
-  return (
-    (acquisitionVerb && physicalObject) ||
-    (acquisitionVerb && deliveryCue) ||
-    quantityObjectCue
-  );
-}
 
 function getConversationId() {
   const existing = localStorage.getItem("fetch_conversation_id");
@@ -57,182 +26,169 @@ function getConversationId() {
 }
 
 
-function StructuredAnswer({ text }) {
-  const clean = String(text || "")
-    .replace(/\r\n/g, "\n")
-    .replace(/```(?:markdown|md|text)?/gi, "")
-    .replace(/```/g, "")
+function decodeEntities(value) {
+  return String(value || "")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
     .trim();
+}
 
-  const sourceLines = clean
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+function getHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "Web source";
+  }
+}
 
-  const blocks = [];
+function parseResearchResults(text) {
+  const raw = decodeEntities(text);
 
-  for (const line of sourceLines) {
-    const heading = line.match(/^#{1,6}\s*(.+)$/);
-    const numbered = line.match(/^(\d{1,2})[.)]\s+(.+)$/);
-    const bullet = line.match(/^(?:[-*•▪◦])\s+(.+)$/);
-
-    if (heading) {
-      blocks.push({ type: "heading", text: heading[1] });
-    } else if (numbered) {
-      blocks.push({
-        type: "numbered",
-        number: numbered[1],
-        text: numbered[2]
-      });
-    } else if (bullet) {
-      blocks.push({
-        type: "bullet",
-        text: bullet[1]
-      });
-    } else {
-      blocks.push({
-        type: "paragraph",
-        text: line
-      });
-    }
+  if (!/here[’']s what i found for/i.test(raw)) {
+    return null;
   }
 
-  // Models sometimes return "1. ... 2. ... 3. ..." in one paragraph.
-  const expanded = [];
+  const results = [];
+  const itemPattern = /(?:^|\s)(\d+)\.\s+([\s\S]*?)(?=\s+\d+\.\s+|$)/g;
+  let match;
 
-  for (const block of blocks) {
-    if (block.type !== "paragraph") {
-      expanded.push(block);
-      continue;
+  while ((match = itemPattern.exec(raw)) !== null) {
+    const number = Number(match[1]);
+    let content = match[2].trim();
+
+    const urlMatch = content.match(/https?:\/\/\S+/i);
+    const url = urlMatch ? urlMatch[0].replace(/[),.;]+$/, "") : "";
+
+    if (urlMatch) {
+      content = content.replace(urlMatch[0], " ").trim();
     }
 
-    const pieces = block.text
-      .split(/\s+(?=\d{1,2}[.)]\s+)/g)
-      .filter(Boolean);
+    let published = "";
+    let source = "";
 
-    if (pieces.length === 1) {
-      expanded.push(block);
-      continue;
+    const sourceDateMatch = content.match(
+      /\s+Source:\s*(.*?)\s*[·|-]\s*(\d{1,2}\s+[A-Za-z]{3,4}\s+\d{4})\s*$/i
+    );
+
+    if (sourceDateMatch) {
+      source = sourceDateMatch[1].trim();
+      published = sourceDateMatch[2].trim();
+      content = content.slice(0, sourceDateMatch.index).trim();
+    } else {
+      const dateMatch = content.match(/(\d{1,2}\s+[A-Za-z]{3,4}\s+\d{4})\s*$/i);
+      if (dateMatch) {
+        published = dateMatch[1];
+        content = content.slice(0, dateMatch.index).trim();
+      }
+
+      const sourceMatch = content.match(/\s+Source:\s*(.+)$/i);
+      if (sourceMatch) {
+        source = sourceMatch[1].trim();
+        content = content.slice(0, sourceMatch.index).trim();
+      }
     }
 
-    for (const piece of pieces) {
-      const match = piece.match(/^(\d{1,2})[.)]\s+(.+)$/);
-
-      expanded.push(
-        match
-          ? {
-              type: "numbered",
-              number: match[1],
-              text: match[2]
-            }
-          : {
-              type: "paragraph",
-              text: piece
-            }
-      );
+    if (!source && url) {
+      source = getHost(url);
     }
+
+    // RSS titles often contain the headline followed by the publisher's
+    // repeated headline/context. Use the first clean headline and retain
+    // only a short context sentence when available.
+    const separators = /\s+(?:–|—)\s+/;
+    const parts = content.split(separators).map((part) => part.trim()).filter(Boolean);
+
+    let title = parts[0] || content;
+    let summary = parts.slice(1).join(" — ");
+
+    // Remove duplicated headline text caused by Google News RSS.
+    const lowerTitle = title.toLowerCase();
+    if (summary.toLowerCase().startsWith(lowerTitle)) {
+      summary = summary.slice(title.length).trim();
+    }
+
+    // Keep cards compact. The complete article is available through the link.
+    title = title.replace(/\s+/g, " ").trim();
+    summary = summary.replace(/\s+/g, " ").trim();
+
+    // RSS feeds often contain several related headlines in one item.
+    // Do not dump that noisy feed text into the customer chat.
+    if (summary.length > 160) {
+      summary = summary.slice(0, 157).trimEnd() + "…";
+    }
+
+    results.push({
+      number,
+      title: title.slice(0, 180),
+      summary: summary.slice(0, 240),
+      source: source || "Web",
+      published,
+      url
+    });
+
+    if (results.length >= 8) break;
+  }
+
+  return results.length ? results : null;
+}
+
+function ResearchResults({ text }) {
+  const results = parseResearchResults(text);
+
+  if (!results) {
+    return <>{text}</>;
   }
 
   return (
-    <div
-      style={{
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-        gap: "10px"
-      }}
-    >
-      {expanded.map((block, index) => {
-        if (block.type === "heading") {
-          return (
-            <div
-              key={index}
-              style={{
-                marginTop: index ? "5px" : 0,
-                fontSize: "15px",
-                lineHeight: 1.35,
-                fontWeight: 700,
-                letterSpacing: "-0.01em",
-                color: "#111"
-              }}
-            >
-              {block.text}
-            </div>
-          );
-        }
+    <div className="researchResults">
+      <div className="researchIntro">
+        <strong>Here’s what I found</strong>
+        <span>Latest web results</span>
+      </div>
 
-        if (block.type === "numbered") {
-          return (
-            <div
-              key={index}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "28px minmax(0, 1fr)",
-                gap: "9px",
-                alignItems: "start",
-                marginTop: "2px"
-              }}
-            >
-              <span
-                style={{
-                  width: "24px",
-                  height: "24px",
-                  display: "grid",
-                  placeItems: "center",
-                  borderRadius: "50%",
-                  background: "#111",
-                  color: "#fff",
-                  fontSize: "11px",
-                  fontWeight: 700
-                }}
-              >
-                {block.number}
-              </span>
-
-              <div
-                style={{
-                  paddingTop: "2px",
-                  lineHeight: 1.58,
-                  color: "#161616"
-                }}
-              >
-                {block.text}
-              </div>
-            </div>
-          );
-        }
-
-        if (block.type === "bullet") {
-          return (
-            <div
-              key={index}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "14px minmax(0, 1fr)",
-                gap: "4px",
-                alignItems: "start",
-                lineHeight: 1.55
-              }}
-            >
-              <span style={{ fontWeight: 700 }}>•</span>
-              <div>{block.text}</div>
-            </div>
-          );
-        }
-
-        return (
-          <p
-            key={index}
-            style={{
-              margin: 0,
-              lineHeight: 1.62,
-              color: "#161616"
-            }}
+      <div className="researchList">
+        {results.map((result) => (
+          <article
+            className="researchCard"
+            key={`${result.number}-${result.url || result.title}`}
           >
-            {block.text}
-          </p>
-        );
-      })}
+            <div className="researchNumber">
+              {String(result.number).padStart(2, "0")}
+            </div>
+
+            <div className="researchBody">
+              <h3>{result.title}</h3>
+
+              {result.summary && <p>{result.summary}</p>}
+
+              <div className="researchMeta">
+                <span>{result.source}</span>
+                {result.published && <span>· {result.published}</span>}
+              </div>
+
+              {result.url && (
+                <a
+                  href={result.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="researchLink"
+                >
+                  Open source ↗
+                </a>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="researchDisclaimer">
+        Fetch found these live web results. The underlying claims have not been independently verified by Fetch.
+      </div>
     </div>
   );
 }
@@ -251,19 +207,10 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [task, setTask] = useState(null);
-  const locationRef = useRef({ latitude: null, longitude: null });
 
   const inputRef = useRef(null);
-  const messagesEndRef = useRef(null);
   const recognitionRef = useRef(null);
   const conversationRef = useRef(getConversationId());
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "nearest"
-    });
-  }, [messages, busy]);
 
   async function send(rawText) {
     const text = String(rawText || "").trim();
@@ -292,34 +239,14 @@ export default function App() {
     });
 
     try {
-      const isPhysicalRequest = looksLikePhysicalRequest(text);
+      const isPhysicalRequest =
+        /\b(buy|get|fetch|bring|pick up|pickup|purchase|deliver|delivery|order|need|source|find)\b/i.test(text) &&
+        !/\b(news|restaurant|weather|remember|calendar|book a flight|research|explain)\b/i.test(text);
 
-      let latitude = locationRef.current.latitude;
-      let longitude = locationRef.current.longitude;
+      let latitude = null;
+      let longitude = null;
 
-      // A location-needed response is a continuation of the same physical
-      // task. Treat common replies such as "enabled", "allow", or "done"
-      // as permission to retry the original physical request.
-      const recentMessages = messages.slice(-6);
-      const waitingForLocation = recentMessages.some(
-        (item) =>
-          item?.role === "assistant" &&
-          /allow location|location access|nearby store/i.test(
-            String(item?.text || "")
-          )
-      );
-
-      const locationContinuation =
-        waitingForLocation &&
-        /^(enabled|enable|allowed|allow|done|yes|okay|ok|sure|go ahead)$/i.test(
-          text
-        );
-
-      const shouldRequestLocation =
-        (isPhysicalRequest || locationContinuation) &&
-        navigator.geolocation;
-
-      if (shouldRequestLocation) {
+      if (isPhysicalRequest && navigator.geolocation) {
         const position = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
             resolve,
@@ -335,60 +262,22 @@ export default function App() {
         if (position?.coords) {
           latitude = position.coords.latitude;
           longitude = position.coords.longitude;
-          locationRef.current = { latitude, longitude };
         }
       }
 
-      const originalPhysicalRequest =
-        [...messages]
-          .reverse()
-          .find(
-            (item) =>
-              item?.role === "user" &&
-              looksLikePhysicalRequest(String(item?.text || ""))
-          )?.text || "";
-
-      const requestText =
-        locationContinuation && originalPhysicalRequest
-          ? originalPhysicalRequest
-          : text;
-
       const response = await fetch(
-        FETCH_AGENT_URL,
+        "https://fetch-ten-olive.vercel.app/api/web/agent.mjs",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            text: requestText,
+            text,
             conversationId: conversationRef.current,
             channel: "web",
             latitude,
-            longitude,
-
-            /*
-             * Give Fetch the recent visible chat so follow-ups like
-             * "yes", "what do you mean?", "tell me more", etc. have context.
-             * Only the last 10 messages are sent.
-             */
-            conversationHistory: [
-              ...messages,
-              {
-                role: "user",
-                text
-              }
-            ]
-              .filter(
-                (message) =>
-                  message?.role === "user" ||
-                  message?.role === "assistant"
-              )
-              .slice(-10)
-              .map((message) => ({
-                role: message.role,
-                content: String(message.text || "").slice(0, 4000)
-              }))
+            longitude
           })
         }
       );
@@ -428,11 +317,7 @@ export default function App() {
                           ? "out for delivery"
                           : data.status === "delivered"
                             ? "delivered"
-                            : data.status === "cancelled"
-                              ? "cancelled"
-                              : data.status === "failed"
-                                ? "execution failed"
-                                : "coordinating";
+                            : "coordinating";
 
       setTask({
         text,
@@ -503,7 +388,7 @@ export default function App() {
 
       try {
         const response = await fetch(
-          `${FETCH_AGENT_URL}?orderId=${encodeURIComponent(orderId)}`,
+          `https://fetch-ten-olive.vercel.app/api/web/agent.mjs?orderId=${encodeURIComponent(orderId)}`,
           {
             method: "GET",
             cache: "no-store"
@@ -688,6 +573,23 @@ export default function App() {
   return (
     <div className="app">
 
+      <style>{`
+        .approvalButton {
+          margin-top: 12px;
+          width: 100%;
+          border: 0;
+          border-radius: 12px;
+          padding: 11px 14px;
+          background: #111;
+          color: #fff;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .approvalButton:hover { opacity: .88; }
+        .approvalButton:disabled { opacity: .5; cursor: default; }
+      `}</style>
+
       <header>
         <button
           className="brand"
@@ -769,9 +671,20 @@ export default function App() {
                   >
 
                     {message.role === "assistant" ? (
-                      <StructuredAnswer text={message.text} />
+                      <ResearchResults text={message.text} />
                     ) : (
                       message.text
+                    )}
+
+                    {message.meta?.status === "awaiting_customer_price_confirmation" && (
+                      <button
+                        type="button"
+                        className="approvalButton"
+                        onClick={() => send("approve")}
+                        disabled={busy}
+                      >
+                        Approve order
+                      </button>
                     )}
 
                     {message.meta?.network && (
@@ -811,8 +724,6 @@ export default function App() {
                 </div>
 
               )}
-
-              <div ref={messagesEndRef} aria-hidden="true" />
 
             </div>
 
@@ -1042,3 +953,15 @@ export default function App() {
             <br />
             <em>Delegate the task.</em>
           </h2>
+
+        </section>
+
+      </main>
+
+    </div>
+  );
+}
+
+createRoot(
+  document.getElementById("root")
+).render(<App />);
