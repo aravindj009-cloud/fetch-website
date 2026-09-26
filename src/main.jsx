@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -11,6 +11,37 @@ const starters = [
 
 const makeId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+// Keep the frontend portable between the public site and the backend Vercel project.
+// Set VITE_FETCH_API_BASE in Vercel if the backend URL changes.
+const FETCH_API_BASE =
+  import.meta.env.VITE_FETCH_API_BASE ||
+  "https://fetch-ten-olive.vercel.app";
+
+const FETCH_AGENT_URL = `${FETCH_API_BASE.replace(/\/$/, "")}/api/web/agent.mjs`;
+
+function looksLikePhysicalRequest(text) {
+  const value = String(text || "");
+
+  const acquisitionVerb =
+    /\b(buy|get|fetch|bring|pick up|pickup|purchase|deliver|delivery|order|send|source|need)\b/i.test(value);
+
+  const physicalObject =
+    /\b(item|product|goods|grocery|groceries|medicine|medicines|food|drink|drinks|snack|snacks|pack|packs|box|boxes|bottle|bottles|piece|pieces|unit|units|shopping|supplies|stuff)\b/i.test(value);
+
+  const deliveryCue =
+    /\b(deliver|delivery|delivered|my address|our address|near me|nearby|at home|to my home)\b/i.test(value);
+
+  const quantityObjectCue =
+    /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+[a-z][a-z-]*\b/i.test(value) &&
+    physicalObject;
+
+  return (
+    (acquisitionVerb && physicalObject) ||
+    (acquisitionVerb && deliveryCue) ||
+    quantityObjectCue
+  );
+}
 
 function getConversationId() {
   const existing = localStorage.getItem("fetch_conversation_id");
@@ -26,124 +57,12 @@ function getConversationId() {
 }
 
 
-function renderInline(text) {
-  const value = String(text || "");
-  const tokens = [];
-  let remaining = value;
-  let tokenId = 0;
-
-  const pushText = (content) => {
-    if (content) {
-      tokens.push(
-        <React.Fragment key={`text-${tokenId++}`}>
-          {content}
-        </React.Fragment>
-      );
-    }
-  };
-
-  while (remaining) {
-    const markdownLink = remaining.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/i);
-
-    if (markdownLink) {
-      tokens.push(
-        <a
-          key={`link-${tokenId++}`}
-          href={markdownLink[2]}
-          target="_blank"
-          rel="noreferrer"
-          style={{
-            color: "#111",
-            fontWeight: 650,
-            textDecoration: "underline",
-            textUnderlineOffset: "2px"
-          }}
-        >
-          {markdownLink[1]}
-        </a>
-      );
-      remaining = remaining.slice(markdownLink[0].length);
-      continue;
-    }
-
-    const rawUrl = remaining.match(/^(https?:\/\/[^\s)]+)/i);
-
-    if (rawUrl) {
-      tokens.push(
-        <a
-          key={`url-${tokenId++}`}
-          href={rawUrl[1]}
-          target="_blank"
-          rel="noreferrer"
-          style={{
-            color: "#111",
-            fontWeight: 650,
-            textDecoration: "underline",
-            textUnderlineOffset: "2px"
-          }}
-        >
-          Open source ↗
-        </a>
-      );
-      remaining = remaining.slice(rawUrl[1].length);
-      continue;
-    }
-
-    const bold = remaining.match(/^\*\*([^*]+)\*\*/);
-
-    if (bold) {
-      tokens.push(
-        <strong key={`bold-${tokenId++}`} style={{ fontWeight: 700 }}>
-          {bold[1]}
-        </strong>
-      );
-      remaining = remaining.slice(bold[0].length);
-      continue;
-    }
-
-    const italic = remaining.match(/^\*([^*]+)\*/);
-
-    if (italic) {
-      tokens.push(
-        <strong key={`italic-${tokenId++}`} style={{ fontWeight: 650 }}>
-          {italic[1]}
-        </strong>
-      );
-      remaining = remaining.slice(italic[0].length);
-      continue;
-    }
-
-    const nextSpecial = remaining.search(/\[|\*\*?https?:\/\/|\*\*/);
-
-    if (nextSpecial === -1) {
-      pushText(remaining);
-      break;
-    }
-
-    if (nextSpecial > 0) {
-      pushText(remaining.slice(0, nextSpecial));
-      remaining = remaining.slice(nextSpecial);
-    } else {
-      pushText(remaining.charAt(0));
-      remaining = remaining.slice(1);
-    }
-  }
-
-  return tokens;
-}
-
-function cleanAnswerText(value) {
-  return String(value || "")
+function StructuredAnswer({ text }) {
+  const clean = String(text || "")
     .replace(/\r\n/g, "\n")
     .replace(/```(?:markdown|md|text)?/gi, "")
     .replace(/```/g, "")
-    .replace(/\s*---+\s*/g, "\n")
-    .replace(/\s*___+\s*/g, "\n")
     .trim();
-}
-
-function StructuredAnswer({ text }) {
-  const clean = cleanAnswerText(text);
 
   const sourceLines = clean
     .split("\n")
@@ -157,13 +76,8 @@ function StructuredAnswer({ text }) {
     const numbered = line.match(/^(\d{1,2})[.)]\s+(.+)$/);
     const bullet = line.match(/^(?:[-*•▪◦])\s+(.+)$/);
 
-    // A model sometimes returns "*Flights" as a bullet-like heading.
-    const starHeading = line.match(/^\*([^*]+)\*$/);
-
     if (heading) {
       blocks.push({ type: "heading", text: heading[1] });
-    } else if (starHeading) {
-      blocks.push({ type: "heading", text: starHeading[1] });
     } else if (numbered) {
       blocks.push({
         type: "numbered",
@@ -171,20 +85,10 @@ function StructuredAnswer({ text }) {
         text: numbered[2]
       });
     } else if (bullet) {
-      const bulletText = bullet[1].trim();
-      const bulletHeading = bulletText.match(/^\*([^*]+)\*:?$/);
-
-      if (bulletHeading) {
-        blocks.push({
-          type: "heading",
-          text: bulletHeading[1]
-        });
-      } else {
-        blocks.push({
-          type: "bullet",
-          text: bulletText
-        });
-      }
+      blocks.push({
+        type: "bullet",
+        text: bullet[1]
+      });
     } else {
       blocks.push({
         type: "paragraph",
@@ -193,7 +97,7 @@ function StructuredAnswer({ text }) {
     }
   }
 
-  // Split common inline "1. ... 2. ... 3. ..." responses.
+  // Models sometimes return "1. ... 2. ... 3. ..." in one paragraph.
   const expanded = [];
 
   for (const block of blocks) {
@@ -235,7 +139,7 @@ function StructuredAnswer({ text }) {
         width: "100%",
         display: "flex",
         flexDirection: "column",
-        gap: "11px"
+        gap: "10px"
       }}
     >
       {expanded.map((block, index) => {
@@ -244,8 +148,7 @@ function StructuredAnswer({ text }) {
             <div
               key={index}
               style={{
-                marginTop: index ? "7px" : 0,
-                paddingBottom: "1px",
+                marginTop: index ? "5px" : 0,
                 fontSize: "15px",
                 lineHeight: 1.35,
                 fontWeight: 700,
@@ -253,7 +156,7 @@ function StructuredAnswer({ text }) {
                 color: "#111"
               }}
             >
-              {renderInline(block.text)}
+              {block.text}
             </div>
           );
         }
@@ -293,7 +196,7 @@ function StructuredAnswer({ text }) {
                   color: "#161616"
                 }}
               >
-                {renderInline(block.text)}
+                {block.text}
               </div>
             </div>
           );
@@ -305,25 +208,14 @@ function StructuredAnswer({ text }) {
               key={index}
               style={{
                 display: "grid",
-                gridTemplateColumns: "15px minmax(0, 1fr)",
-                gap: "5px",
+                gridTemplateColumns: "14px minmax(0, 1fr)",
+                gap: "4px",
                 alignItems: "start",
-                lineHeight: 1.58
+                lineHeight: 1.55
               }}
             >
-              <span
-                style={{
-                  fontSize: "14px",
-                  lineHeight: 1.4,
-                  color: "#111"
-                }}
-              >
-                •
-              </span>
-
-              <div>
-                {renderInline(block.text)}
-              </div>
+              <span style={{ fontWeight: 700 }}>•</span>
+              <div>{block.text}</div>
             </div>
           );
         }
@@ -337,7 +229,7 @@ function StructuredAnswer({ text }) {
               color: "#161616"
             }}
           >
-            {renderInline(block.text)}
+            {block.text}
           </p>
         );
       })}
@@ -362,8 +254,16 @@ export default function App() {
   const locationRef = useRef({ latitude: null, longitude: null });
 
   const inputRef = useRef(null);
+  const messagesEndRef = useRef(null);
   const recognitionRef = useRef(null);
   const conversationRef = useRef(getConversationId());
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest"
+    });
+  }, [messages, busy]);
 
   async function send(rawText) {
     const text = String(rawText || "").trim();
@@ -392,9 +292,7 @@ export default function App() {
     });
 
     try {
-      const isPhysicalRequest =
-        /\b(buy|get|fetch|bring|pick up|purchase|deliver|order)\b/i.test(text) &&
-        !/\b(news|restaurant|weather|remember|calendar|book a flight)\b/i.test(text);
+      const isPhysicalRequest = looksLikePhysicalRequest(text);
 
       let latitude = locationRef.current.latitude;
       let longitude = locationRef.current.longitude;
@@ -447,9 +345,7 @@ export default function App() {
           .find(
             (item) =>
               item?.role === "user" &&
-              /\b(buy|get|fetch|bring|pick up|purchase|deliver|order)\b/i.test(
-                String(item?.text || "")
-              )
+              looksLikePhysicalRequest(String(item?.text || ""))
           )?.text || "";
 
       const requestText =
@@ -458,7 +354,7 @@ export default function App() {
           : text;
 
       const response = await fetch(
-        "https://fetch-ten-olive.vercel.app/api/web/agent.mjs",
+        FETCH_AGENT_URL,
         {
           method: "POST",
           headers: {
@@ -532,7 +428,11 @@ export default function App() {
                           ? "out for delivery"
                           : data.status === "delivered"
                             ? "delivered"
-                            : "coordinating";
+                            : data.status === "cancelled"
+                              ? "cancelled"
+                              : data.status === "failed"
+                                ? "execution failed"
+                                : "coordinating";
 
       setTask({
         text,
@@ -540,7 +440,7 @@ export default function App() {
         status: data.status,
         network: route,
         workflowId: data.workflow_id,
-        orderId: data.order_id || null
+        orderId: data.orderId || data.order_id || null
       });
 
       setMessages((current) => [
@@ -558,8 +458,11 @@ export default function App() {
         }
       ]);
 
-      if (data.order_id) {
-        watchOrder(data.order_id, text);
+      const resolvedOrderId =
+        data.orderId || data.order_id || null;
+
+      if (resolvedOrderId) {
+        watchOrder(resolvedOrderId, text);
       }
     } catch (error) {
       console.error("FETCH UI ERROR", error);
@@ -600,7 +503,7 @@ export default function App() {
 
       try {
         const response = await fetch(
-          `https://fetch-ten-olive.vercel.app/api/web/agent.mjs?orderId=${encodeURIComponent(orderId)}`,
+          `${FETCH_AGENT_URL}?orderId=${encodeURIComponent(orderId)}`,
           {
             method: "GET",
             cache: "no-store"
@@ -909,6 +812,8 @@ export default function App() {
 
               )}
 
+              <div ref={messagesEndRef} aria-hidden="true" />
+
             </div>
 
             <div className="composeArea">
@@ -1137,15 +1042,3 @@ export default function App() {
             <br />
             <em>Delegate the task.</em>
           </h2>
-
-        </section>
-
-      </main>
-
-    </div>
-  );
-}
-
-createRoot(
-  document.getElementById("root")
-).render(<App />);
