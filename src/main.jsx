@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -11,6 +11,11 @@ const starters = [
 
 const makeId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const API_URL = "/api/web/agent.mjs";
+const ACTIVE_ORDER_KEY = "fetch_active_order_id";
+const ORDER_POLL_INTERVAL_MS = 3000;
+const MAX_ORDER_CHECKS = 100;
 
 function getConversationId() {
   const existing = localStorage.getItem("fetch_conversation_id");
@@ -208,6 +213,9 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const [task, setTask] = useState(null);
 
+  const activeWatchRef = useRef(null);
+  const lastOrderMessageRef = useRef(new Map());
+
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const conversationRef = useRef(getConversationId());
@@ -266,7 +274,7 @@ export default function App() {
       }
 
       const response = await fetch(
-        "https://fetch-ten-olive.vercel.app/api/web/agent.mjs",
+        API_URL,
         {
           method: "POST",
           headers: {
@@ -347,6 +355,7 @@ export default function App() {
         data.orderId || data.order_id || null;
 
       if (resolvedOrderId) {
+        localStorage.setItem(ACTIVE_ORDER_KEY, resolvedOrderId);
         watchOrder(resolvedOrderId, text);
       }
     } catch (error) {
@@ -380,18 +389,43 @@ export default function App() {
     }
   }
 
-  async function watchOrder(orderId, originalText) {
-    const maxChecks = 100;
+  async function watchOrder(orderId, originalText = "") {
+    if (!orderId) return;
 
-    for (let check = 0; check < maxChecks; check += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Never create two polling loops for the same order.
+    if (activeWatchRef.current === orderId) {
+      return;
+    }
+
+    activeWatchRef.current = orderId;
+    lastOrderMessageRef.current.delete(orderId);
+
+    for (let check = 0; check < MAX_ORDER_CHECKS; check += 1) {
+      if (check > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, ORDER_POLL_INTERVAL_MS)
+        );
+      }
+
+      // The user may have started a different order while this one was
+      // running. Stop this watcher rather than allowing old state to
+      // overwrite the new conversation.
+      const currentStoredOrder =
+        localStorage.getItem(ACTIVE_ORDER_KEY);
+
+      if (currentStoredOrder && currentStoredOrder !== orderId) {
+        break;
+      }
 
       try {
         const response = await fetch(
-          `https://fetch-ten-olive.vercel.app/api/web/agent.mjs?orderId=${encodeURIComponent(orderId)}`,
+          `${API_URL}?orderId=${encodeURIComponent(orderId)}`,
           {
             method: "GET",
-            cache: "no-store"
+            cache: "no-store",
+            headers: {
+              Accept: "application/json"
+            }
           }
         );
 
@@ -402,48 +436,54 @@ export default function App() {
         }
 
         const order = data.order;
+        const status = String(order.status || "unknown").toLowerCase();
+
         const route =
-          order.status === "finding_shopper" ||
-          order.status === "shopper_assigned" ||
-          order.status === "shopping" ||
-          order.status === "picked_up" ||
-          order.status === "out_for_delivery"
+          [
+            "finding_shopper",
+            "shopper_assigned",
+            "shopping",
+            "picked_up",
+            "out_for_delivery"
+          ].includes(status)
             ? "shopper"
-            : order.status === "finding_partner" ||
-                order.status === "partner_offered" ||
-                order.status === "awaiting_customer_price_confirmation"
+            : [
+                "finding_partner",
+                "partner_offered",
+                "awaiting_customer_price_confirmation"
+              ].includes(status)
               ? "partner_store"
               : "agent";
 
         let stage = "coordinating";
 
-        if (order.status === "finding_partner") {
+        if (status === "finding_partner") {
           stage = "finding partner store";
-        } else if (order.status === "partner_offered") {
+        } else if (status === "partner_offered") {
           stage = "partner store contacted";
-        } else if (order.status === "awaiting_customer_price_confirmation") {
+        } else if (status === "awaiting_customer_price_confirmation") {
           stage = "price ready for approval";
-        } else if (order.status === "finding_shopper") {
+        } else if (status === "finding_shopper") {
           stage = "finding shopper";
-        } else if (order.status === "shopper_assigned") {
+        } else if (status === "shopper_assigned") {
           stage = "shopper assigned";
-        } else if (order.status === "shopping") {
+        } else if (status === "shopping") {
           stage = "shopping";
-        } else if (order.status === "picked_up") {
+        } else if (status === "picked_up") {
           stage = "picked up";
-        } else if (order.status === "out_for_delivery") {
-          stage = "out for delivery";
-        } else if (order.status === "payment_pending") {
+        } else if (status === "payment_pending") {
           stage = "payment pending";
-        } else if (order.status === "delivered") {
+        } else if (status === "out_for_delivery") {
+          stage = "out for delivery";
+        } else if (status === "delivered") {
           stage = "delivered";
-        } else if (order.status === "cancelled") {
+        } else if (status === "cancelled") {
           stage = "cancelled";
         }
 
         setTask((current) => ({
           ...(current || {}),
-          text: originalText,
+          text: originalText || current?.text || "Fetch order",
           stage,
           status: order.status,
           network: route,
@@ -451,39 +491,51 @@ export default function App() {
           orderId
         }));
 
-        const message = data.message;
+        const message = String(data.message || "").trim();
+        const messageKey = `${status}::${message}`;
+        const previousMessageKey =
+          lastOrderMessageRef.current.get(orderId);
 
-        if (message) {
-          setMessages((current) => {
-            const last = current[current.length - 1];
+        if (message && messageKey !== previousMessageKey) {
+          lastOrderMessageRef.current.set(orderId, messageKey);
 
-            if (last?.role === "assistant" && last?.text === message) {
-              return current;
-            }
-
-            return [
-              ...current,
-              {
-                id: makeId(),
-                role: "assistant",
-                text: message,
-                meta: {
-                  status: order.status,
-                  network: route
-                }
+          setMessages((current) => [
+            ...current,
+            {
+              id: makeId(),
+              role: "assistant",
+              text: message,
+              meta: {
+                status: order.status,
+                network: route
               }
-            ];
-          });
+            }
+          ]);
         }
 
         if (data.terminal) {
-          return;
+          localStorage.removeItem(ACTIVE_ORDER_KEY);
+          break;
         }
       } catch (error) {
         console.error("FETCH ORDER WATCH ERROR", error);
+        // A temporary polling failure must not terminate the workflow.
       }
     }
+
+    if (activeWatchRef.current === orderId) {
+      activeWatchRef.current = null;
+    }
   }
+
+  useEffect(() => {
+    const savedOrderId = localStorage.getItem(ACTIVE_ORDER_KEY);
+
+    if (!savedOrderId) return;
+
+    // Resume an in-flight order after a page refresh.
+    watchOrder(savedOrderId, "Your Fetch order");
+  }, []);
 
   function startVoice() {
     const SpeechRecognition =
@@ -540,6 +592,9 @@ export default function App() {
   }
 
   function clearConversation() {
+    activeWatchRef.current = null;
+    localStorage.removeItem(ACTIVE_ORDER_KEY);
+
     const newConversation = `web:${makeId()}`;
 
     localStorage.setItem(
