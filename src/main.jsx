@@ -9,41 +9,6 @@ const starters = [
   "Remember that I prefer things after 7 PM"
 ];
 
-// Production API: this is the deployed Fetch web bridge that has been verified to return JSON.
-// Keep the browser pointed at the backend until the frontend and API are intentionally
-// moved behind the same Vercel project.
-const API_BASE_URL = "https://fetch-ten-olive.vercel.app/api/web/agent.mjs";
-
-async function readFetchJson(response) {
-  const contentType = response.headers.get("content-type") || "";
-  const raw = await response.text();
-
-  if (!contentType.toLowerCase().includes("application/json")) {
-    const preview = raw.slice(0, 220).replace(/\s+/g, " ").trim();
-    throw new Error(
-      `Fetch API returned a non-JSON response (${response.status}). ${
-        preview || "The server returned HTML instead of JSON."
-      }`
-    );
-  }
-
-  let data;
-
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    throw new Error("Fetch API returned invalid JSON.");
-  }
-
-  if (!response.ok || !data?.success) {
-    throw new Error(
-      data?.error || `Fetch API request failed (${response.status}).`
-    );
-  }
-
-  return data;
-}
-
 const makeId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -172,11 +137,53 @@ function parseResearchResults(text) {
   return results.length ? results : null;
 }
 
+function formatAnswerText(text) {
+  const raw = String(text || "").replace(/\r/g, "").trim();
+  if (!raw) return [];
+
+  return raw
+    .split(/\n{2,}|(?<=\.)\s+(?=\d+\.\s)/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .flatMap((block) => {
+      const lines = block.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+      if (lines.length > 1) return lines;
+      return [block];
+    });
+}
+
+function AnswerText({ text }) {
+  const blocks = formatAnswerText(text);
+
+  return (
+    <div className="answerText" style={{ display: "grid", gap: "8px", lineHeight: 1.55 }}>
+      {blocks.map((block, index) => {
+        const bullet = /^[-•*]\s+/.test(block);
+        const numbered = /^\d+[.)]\s+/.test(block);
+        const clean = block.replace(/^[-•*]\s+/, "").replace(/^(\d+)[.)]\s+/, "$1. ");
+
+        if (bullet || numbered) {
+          return (
+            <div key={`${index}-${block}`} style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+              <span style={{ minWidth: numbered ? "20px" : "8px", fontWeight: 600 }}>
+                {numbered ? clean.match(/^\d+\./)?.[0] : "•"}
+              </span>
+              <span>{numbered ? clean.replace(/^\d+\.\s*/, "") : clean}</span>
+            </div>
+          );
+        }
+
+        return <p key={`${index}-${block}`} style={{ margin: 0 }}>{block}</p>;
+      })}
+    </div>
+  );
+}
+
 function ResearchResults({ text }) {
   const results = parseResearchResults(text);
 
   if (!results) {
-    return <>{text}</>;
+    return <AnswerText text={text} />;
   }
 
   return (
@@ -246,73 +253,13 @@ export default function App() {
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const conversationRef = useRef(getConversationId());
-  const sendLockRef = useRef(false);
-  const watchedOrdersRef = useRef(new Set());
-  const lastRenderedOrderStatusRef = useRef(new Map());
-  const renderedOrderStateKeysRef = useRef(new Set());
-
-  function appendOrderStateMessage(
-    orderId,
-    status,
-    text,
-    network = "agent",
-    options = {}
-  ) {
-    const cleanStatus = String(status || "").trim();
-    const cleanOrderId = String(orderId || "").trim();
-    const cleanMessage = String(text || "").trim();
-    const force = Boolean(options.force);
-
-    if (!cleanOrderId || !cleanStatus || !cleanMessage) {
-      return false;
-    }
-
-    const stateKey = `${cleanOrderId}:${cleanStatus}`;
-    const messageKey = `${stateKey}:${cleanMessage.toLowerCase().replace(/\s+/g, " ")}`;
-
-    /*
-     * A background poll and the POST response can race each other.
-     * Never render the same state twice. For an intentional same-state
-     * customer action (e.g. Payment details / PAID), allow a new message.
-     */
-    if (!force && renderedOrderStateKeysRef.current.has(stateKey)) {
-      return false;
-    }
-
-    if (force && renderedOrderStateKeysRef.current.has(messageKey)) {
-      return false;
-    }
-
-    renderedOrderStateKeysRef.current.add(stateKey);
-    renderedOrderStateKeysRef.current.add(messageKey);
-    lastRenderedOrderStatusRef.current.set(cleanOrderId, cleanStatus);
-
-    setMessages((current) => [
-      ...current,
-      {
-        id: makeId(),
-        role: "assistant",
-        text: cleanMessage,
-        meta: {
-          status: cleanStatus,
-          network,
-          transient: force
-        }
-      }
-    ]);
-
-    return true;
-  }
 
   async function send(rawText) {
     const text = String(rawText || "").trim();
 
-    if (!text || busy || sendLockRef.current) {
+    if (!text || busy) {
       return;
     }
-
-    // Protect against Enter + form submit firing in the same browser event cycle.
-    sendLockRef.current = true;
 
     setMessages((current) => [
       ...current,
@@ -361,30 +308,29 @@ export default function App() {
       }
 
       const response = await fetch(
-        API_BASE_URL,
+        "https://fetch-ten-olive.vercel.app/api/web/agent.mjs",
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json"
+            "Content-Type": "application/json"
           },
           body: JSON.stringify({
             text,
             conversationId: conversationRef.current,
             channel: "web",
             latitude,
-            longitude,
-            conversationHistory: messages
-              .slice(-10)
-              .map((message) => ({
-                role: message.role,
-                content: message.text
-              }))
+            longitude
           })
         }
       );
 
-      const data = await readFetchJson(response);
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        throw new Error(
+          data?.error || "Fetch request failed"
+        );
+      }
 
       const route =
         data?.atc?.resource_type ||
@@ -424,33 +370,23 @@ export default function App() {
         orderId: data.orderId || data.order_id || null
       });
 
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: "assistant",
+          text:
+            data.message ||
+            "I’m working on that.",
+          meta: {
+            status: data.status,
+            network: route
+          }
+        }
+      ]);
+
       const resolvedOrderId =
         data.orderId || data.order_id || null;
-
-      if (resolvedOrderId && data.status) {
-        appendOrderStateMessage(
-          resolvedOrderId,
-          data.status,
-          data.message || "I’m working on that.",
-          route,
-          {
-            force: /^(payment details|pay|paid|i paid|payment done|payment sent|i have paid|done paid)$/i.test(text.trim())
-          }
-        );
-      } else {
-        setMessages((current) => [
-          ...current,
-          {
-            id: makeId(),
-            role: "assistant",
-            text: data.message || "I’m working on that.",
-            meta: {
-              status: data.status,
-              network: route
-            }
-          }
-        ]);
-      }
 
       if (resolvedOrderId) {
         watchOrder(resolvedOrderId, text);
@@ -479,7 +415,6 @@ export default function App() {
       ]);
     } finally {
       setBusy(false);
-      sendLockRef.current = false;
 
       setTimeout(() => {
         inputRef.current?.focus();
@@ -488,13 +423,6 @@ export default function App() {
   }
 
   async function watchOrder(orderId, originalText) {
-    if (!orderId || watchedOrdersRef.current.has(String(orderId))) {
-      return;
-    }
-
-    watchedOrdersRef.current.add(String(orderId));
-    localStorage.setItem("fetch_active_order_id", String(orderId));
-
     const maxChecks = 100;
 
     for (let check = 0; check < maxChecks; check += 1) {
@@ -502,31 +430,21 @@ export default function App() {
 
       try {
         const response = await fetch(
-          `${API_BASE_URL}?orderId=${encodeURIComponent(orderId)}`,
+          `https://fetch-ten-olive.vercel.app/api/web/agent.mjs?orderId=${encodeURIComponent(orderId)}`,
           {
             method: "GET",
-            cache: "no-store",
-            headers: {
-              Accept: "application/json"
-            }
+            cache: "no-store"
           }
         );
 
-        let data;
-        try {
-          data = await readFetchJson(response);
-        } catch (error) {
-          console.error("FETCH ORDER WATCH RESPONSE ERROR", error);
-          continue;
-        }
+        const data = await response.json();
 
-        if (!data?.order) {
+        if (!response.ok || !data?.success || !data?.order) {
           continue;
         }
 
         const order = data.order;
         const route =
-          order.shopper_id ||
           order.status === "finding_shopper" ||
           order.status === "shopper_assigned" ||
           order.status === "shopping" ||
@@ -576,25 +494,31 @@ export default function App() {
         }));
 
         const message = data.message;
-        const currentStatus = String(order.status || "unknown");
 
-        /*
-         * Both the POST response and the background watcher can observe the
-         * same transition. Deduplicate by the authoritative order state, not
-         * by timing, so approval/payment transitions can never render twice.
-         */
         if (message) {
-          appendOrderStateMessage(
-            orderId,
-            currentStatus,
-            message,
-            route
-          );
+          setMessages((current) => {
+            const last = current[current.length - 1];
+
+            if (last?.role === "assistant" && last?.text === message) {
+              return current;
+            }
+
+            return [
+              ...current,
+              {
+                id: makeId(),
+                role: "assistant",
+                text: message,
+                meta: {
+                  status: order.status,
+                  network: route
+                }
+              }
+            ];
+          });
         }
 
         if (data.terminal) {
-          localStorage.removeItem("fetch_active_order_id");
-          watchedOrdersRef.current.delete(String(orderId));
           return;
         }
       } catch (error) {
@@ -666,9 +590,6 @@ export default function App() {
     );
 
     conversationRef.current = newConversation;
-    watchedOrdersRef.current.clear();
-    lastRenderedOrderStatusRef.current.clear();
-    localStorage.removeItem("fetch_active_order_id");
 
     setMessages([
       {
@@ -806,27 +727,6 @@ export default function App() {
                       >
                         Approve order
                       </button>
-                    )}
-
-                    {message.meta?.status === "payment_pending" && (
-                      <>
-                        <button
-                          type="button"
-                          className="approvalButton"
-                          onClick={() => send("payment details")}
-                          disabled={busy}
-                        >
-                          Payment details
-                        </button>
-                        <button
-                          type="button"
-                          className="approvalButton"
-                          onClick={() => send("PAID")}
-                          disabled={busy}
-                        >
-                          I’ve paid the shopper
-                        </button>
-                      </>
                     )}
 
                     {message.meta?.network && (
