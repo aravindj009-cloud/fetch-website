@@ -248,6 +248,7 @@ export default function App() {
   const conversationRef = useRef(getConversationId());
   const sendLockRef = useRef(false);
   const watchedOrdersRef = useRef(new Set());
+  const lastRenderedOrderStatusRef = useRef(new Map());
 
   async function send(rawText) {
     const text = String(rawText || "").trim();
@@ -318,7 +319,13 @@ export default function App() {
             conversationId: conversationRef.current,
             channel: "web",
             latitude,
-            longitude
+            longitude,
+            conversationHistory: messages
+              .slice(-10)
+              .map((message) => ({
+                role: message.role,
+                content: message.text
+              }))
           })
         }
       );
@@ -380,6 +387,13 @@ export default function App() {
 
       const resolvedOrderId =
         data.orderId || data.order_id || null;
+
+      if (resolvedOrderId && data.status) {
+        lastRenderedOrderStatusRef.current.set(
+          String(resolvedOrderId),
+          String(data.status)
+        );
+      }
 
       if (resolvedOrderId) {
         watchOrder(resolvedOrderId, text);
@@ -455,6 +469,7 @@ export default function App() {
 
         const order = data.order;
         const route =
+          order.shopper_id ||
           order.status === "finding_shopper" ||
           order.status === "shopper_assigned" ||
           order.status === "shopping" ||
@@ -504,33 +519,41 @@ export default function App() {
         }));
 
         const message = data.message;
+        const orderKey = String(orderId);
+        const previousStatus =
+          lastRenderedOrderStatusRef.current.get(orderKey);
+        const currentStatus = String(order.status || "unknown");
 
-        if (message) {
-          setMessages((current) => {
-            const last = current[current.length - 1];
+        /*
+         * The POST response already renders the first state. The watcher
+         * must only render a message when the order actually transitions
+         * to a new state. Otherwise the same finding_shopper / price-ready
+         * message appears twice on the customer screen.
+         */
+        if (message && previousStatus !== currentStatus) {
+          lastRenderedOrderStatusRef.current.set(
+            orderKey,
+            currentStatus
+          );
 
-            if (last?.role === "assistant" && last?.text === message) {
-              return current;
-            }
-
-            return [
-              ...current,
-              {
-                id: makeId(),
-                role: "assistant",
-                text: message,
-                meta: {
-                  status: order.status,
-                  network: route
-                }
+          setMessages((current) => [
+            ...current,
+            {
+              id: makeId(),
+              role: "assistant",
+              text: message,
+              meta: {
+                status: order.status,
+                network: route
               }
-            ];
-          });
+            }
+          ]);
         }
 
         if (data.terminal) {
           localStorage.removeItem("fetch_active_order_id");
           watchedOrdersRef.current.delete(String(orderId));
+          lastRenderedOrderStatusRef.current.delete(String(orderId));
           return;
         }
       } catch (error) {
@@ -603,6 +626,7 @@ export default function App() {
 
     conversationRef.current = newConversation;
     watchedOrdersRef.current.clear();
+    lastRenderedOrderStatusRef.current.clear();
     localStorage.removeItem("fetch_active_order_id");
 
     setMessages([
