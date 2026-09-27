@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -9,30 +9,43 @@ const starters = [
   "Remember that I prefer things after 7 PM"
 ];
 
-const makeId = () =>
-  `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+// Production API: this is the deployed Fetch web bridge that has been verified to return JSON.
+// Keep the browser pointed at the backend until the frontend and API are intentionally
+// moved behind the same Vercel project.
+const API_BASE_URL = "https://fetch-ten-olive.vercel.app/api/web/agent.mjs";
 
-const API_URL = "/api/web/agent.mjs";
-async function readApiJson(response) {
+async function readFetchJson(response) {
   const contentType = response.headers.get("content-type") || "";
-  const body = await response.text();
+  const raw = await response.text();
+
   if (!contentType.toLowerCase().includes("application/json")) {
-    const excerpt = body.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 150);
+    const preview = raw.slice(0, 220).replace(/\s+/g, " ").trim();
     throw new Error(
-      `Fetch API returned ${response.status} instead of JSON at ${response.url}. ` +
-      `Check that api/web/agent.mjs is deployed on this domain. ${excerpt}`
+      `Fetch API returned a non-JSON response (${response.status}). ${
+        preview || "The server returned HTML instead of JSON."
+      }`
     );
   }
+
+  let data;
+
   try {
-    return JSON.parse(body);
-  } catch (_) {
-    throw new Error(`Fetch API returned invalid JSON (HTTP ${response.status}) at ${response.url}`);
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error("Fetch API returned invalid JSON.");
   }
+
+  if (!response.ok || !data?.success) {
+    throw new Error(
+      data?.error || `Fetch API request failed (${response.status}).`
+    );
+  }
+
+  return data;
 }
 
-const ACTIVE_ORDER_KEY = "fetch_active_order_id";
-const ORDER_POLL_INTERVAL_MS = 3000;
-const MAX_ORDER_CHECKS = 100;
+const makeId = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 function getConversationId() {
   const existing = localStorage.getItem("fetch_conversation_id");
@@ -230,19 +243,21 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const [task, setTask] = useState(null);
 
-  const activeWatchRef = useRef(null);
-  const lastOrderMessageRef = useRef(new Map());
-
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const conversationRef = useRef(getConversationId());
+  const sendLockRef = useRef(false);
+  const watchedOrdersRef = useRef(new Set());
 
   async function send(rawText) {
     const text = String(rawText || "").trim();
 
-    if (!text || busy) {
+    if (!text || busy || sendLockRef.current) {
       return;
     }
+
+    // Protect against Enter + form submit firing in the same browser event cycle.
+    sendLockRef.current = true;
 
     setMessages((current) => [
       ...current,
@@ -291,7 +306,7 @@ export default function App() {
       }
 
       const response = await fetch(
-        API_URL,
+        API_BASE_URL,
         {
           method: "POST",
           headers: {
@@ -308,13 +323,7 @@ export default function App() {
         }
       );
 
-      const data = await readApiJson(response);
-
-      if (!response.ok || !data?.success) {
-        throw new Error(
-          data?.error || "Fetch request failed"
-        );
-      }
+      const data = await readFetchJson(response);
 
       const route =
         data?.atc?.resource_type ||
@@ -373,7 +382,6 @@ export default function App() {
         data.orderId || data.order_id || null;
 
       if (resolvedOrderId) {
-        localStorage.setItem(ACTIVE_ORDER_KEY, resolvedOrderId);
         watchOrder(resolvedOrderId, text);
       }
     } catch (error) {
@@ -400,6 +408,7 @@ export default function App() {
       ]);
     } finally {
       setBusy(false);
+      sendLockRef.current = false;
 
       setTimeout(() => {
         inputRef.current?.focus();
@@ -407,37 +416,22 @@ export default function App() {
     }
   }
 
-  async function watchOrder(orderId, originalText = "") {
-    if (!orderId) return;
-
-    // Never create two polling loops for the same order.
-    if (activeWatchRef.current === orderId) {
+  async function watchOrder(orderId, originalText) {
+    if (!orderId || watchedOrdersRef.current.has(String(orderId))) {
       return;
     }
 
-    activeWatchRef.current = orderId;
-    lastOrderMessageRef.current.delete(orderId);
+    watchedOrdersRef.current.add(String(orderId));
+    localStorage.setItem("fetch_active_order_id", String(orderId));
 
-    for (let check = 0; check < MAX_ORDER_CHECKS; check += 1) {
-      if (check > 0) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, ORDER_POLL_INTERVAL_MS)
-        );
-      }
+    const maxChecks = 100;
 
-      // The user may have started a different order while this one was
-      // running. Stop this watcher rather than allowing old state to
-      // overwrite the new conversation.
-      const currentStoredOrder =
-        localStorage.getItem(ACTIVE_ORDER_KEY);
-
-      if (currentStoredOrder && currentStoredOrder !== orderId) {
-        break;
-      }
+    for (let check = 0; check < maxChecks; check += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
       try {
         const response = await fetch(
-          `${API_URL}?orderId=${encodeURIComponent(orderId)}`,
+          `${API_BASE_URL}?orderId=${encodeURIComponent(orderId)}`,
           {
             method: "GET",
             cache: "no-store",
@@ -447,61 +441,61 @@ export default function App() {
           }
         );
 
-        const data = await readApiJson(response);
+        let data;
+        try {
+          data = await readFetchJson(response);
+        } catch (error) {
+          console.error("FETCH ORDER WATCH RESPONSE ERROR", error);
+          continue;
+        }
 
-        if (!response.ok || !data?.success || !data?.order) {
+        if (!data?.order) {
           continue;
         }
 
         const order = data.order;
-        const status = String(order.status || "unknown").toLowerCase();
-
         const route =
-          [
-            "finding_shopper",
-            "shopper_assigned",
-            "shopping",
-            "picked_up",
-            "out_for_delivery"
-          ].includes(status)
+          order.status === "finding_shopper" ||
+          order.status === "shopper_assigned" ||
+          order.status === "shopping" ||
+          order.status === "picked_up" ||
+          order.status === "out_for_delivery"
             ? "shopper"
-            : [
-                "finding_partner",
-                "partner_offered",
-                "awaiting_customer_price_confirmation"
-              ].includes(status)
+            : order.status === "finding_partner" ||
+                order.status === "partner_offered" ||
+                order.status === "awaiting_customer_price_confirmation"
               ? "partner_store"
               : "agent";
 
         let stage = "coordinating";
 
-        if (status === "finding_partner") {
+        if (order.status === "finding_partner") {
           stage = "finding partner store";
-        } else if (status === "partner_offered") {
+        } else if (order.status === "partner_offered") {
           stage = "partner store contacted";
-        } else if (status === "awaiting_customer_price_confirmation") {
+        } else if (order.status === "awaiting_customer_price_confirmation") {
           stage = "price ready for approval";
-        } else if (status === "finding_shopper") {
+        } else if (order.status === "finding_shopper") {
           stage = "finding shopper";
-        } else if (status === "shopper_assigned") {
+        } else if (order.status === "shopper_assigned") {
           stage = "shopper assigned";
-        } else if (status === "shopping") {
+        } else if (order.status === "shopping") {
           stage = "shopping";
-        } else if (status === "picked_up") {
+        } else if (order.status === "picked_up") {
           stage = "picked up";
-        } else if (status === "payment_pending") {
-          stage = "payment pending";
-        } else if (status === "out_for_delivery") {
+        } else if (order.status === "out_for_delivery") {
           stage = "out for delivery";
-        } else if (status === "delivered") {
+        } else if (order.status === "payment_pending") {
+          stage = "payment pending";
+        } else if (order.status === "delivered") {
           stage = "delivered";
-        } else if (status === "cancelled") {
+        } else if (order.status === "cancelled") {
           stage = "cancelled";
         }
 
         setTask((current) => ({
           ...(current || {}),
-          text: originalText || current?.text || "Fetch order",
+          text: originalText,
           stage,
           status: order.status,
           network: route,
@@ -509,51 +503,41 @@ export default function App() {
           orderId
         }));
 
-        const message = String(data.message || "").trim();
-        const messageKey = `${status}::${message}`;
-        const previousMessageKey =
-          lastOrderMessageRef.current.get(orderId);
+        const message = data.message;
 
-        if (message && messageKey !== previousMessageKey) {
-          lastOrderMessageRef.current.set(orderId, messageKey);
+        if (message) {
+          setMessages((current) => {
+            const last = current[current.length - 1];
 
-          setMessages((current) => [
-            ...current,
-            {
-              id: makeId(),
-              role: "assistant",
-              text: message,
-              meta: {
-                status: order.status,
-                network: route
-              }
+            if (last?.role === "assistant" && last?.text === message) {
+              return current;
             }
-          ]);
+
+            return [
+              ...current,
+              {
+                id: makeId(),
+                role: "assistant",
+                text: message,
+                meta: {
+                  status: order.status,
+                  network: route
+                }
+              }
+            ];
+          });
         }
 
         if (data.terminal) {
-          localStorage.removeItem(ACTIVE_ORDER_KEY);
-          break;
+          localStorage.removeItem("fetch_active_order_id");
+          watchedOrdersRef.current.delete(String(orderId));
+          return;
         }
       } catch (error) {
         console.error("FETCH ORDER WATCH ERROR", error);
-        // A temporary polling failure must not terminate the workflow.
       }
     }
-
-    if (activeWatchRef.current === orderId) {
-      activeWatchRef.current = null;
-    }
   }
-
-  useEffect(() => {
-    const savedOrderId = localStorage.getItem(ACTIVE_ORDER_KEY);
-
-    if (!savedOrderId) return;
-
-    // Resume an in-flight order after a page refresh.
-    watchOrder(savedOrderId, "Your Fetch order");
-  }, []);
 
   function startVoice() {
     const SpeechRecognition =
@@ -610,9 +594,6 @@ export default function App() {
   }
 
   function clearConversation() {
-    activeWatchRef.current = null;
-    localStorage.removeItem(ACTIVE_ORDER_KEY);
-
     const newConversation = `web:${makeId()}`;
 
     localStorage.setItem(
@@ -621,6 +602,8 @@ export default function App() {
     );
 
     conversationRef.current = newConversation;
+    watchedOrdersRef.current.clear();
+    localStorage.removeItem("fetch_active_order_id");
 
     setMessages([
       {
