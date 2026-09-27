@@ -137,53 +137,11 @@ function parseResearchResults(text) {
   return results.length ? results : null;
 }
 
-function formatAnswerText(text) {
-  const raw = String(text || "").replace(/\r/g, "").trim();
-  if (!raw) return [];
-
-  return raw
-    .split(/\n{2,}|(?<=\.)\s+(?=\d+\.\s)/)
-    .map((block) => block.trim())
-    .filter(Boolean)
-    .flatMap((block) => {
-      const lines = block.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-      if (lines.length > 1) return lines;
-      return [block];
-    });
-}
-
-function AnswerText({ text }) {
-  const blocks = formatAnswerText(text);
-
-  return (
-    <div className="answerText" style={{ display: "grid", gap: "8px", lineHeight: 1.55 }}>
-      {blocks.map((block, index) => {
-        const bullet = /^[-•*]\s+/.test(block);
-        const numbered = /^\d+[.)]\s+/.test(block);
-        const clean = block.replace(/^[-•*]\s+/, "").replace(/^(\d+)[.)]\s+/, "$1. ");
-
-        if (bullet || numbered) {
-          return (
-            <div key={`${index}-${block}`} style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
-              <span style={{ minWidth: numbered ? "20px" : "8px", fontWeight: 600 }}>
-                {numbered ? clean.match(/^\d+\./)?.[0] : "•"}
-              </span>
-              <span>{numbered ? clean.replace(/^\d+\.\s*/, "") : clean}</span>
-            </div>
-          );
-        }
-
-        return <p key={`${index}-${block}`} style={{ margin: 0 }}>{block}</p>;
-      })}
-    </div>
-  );
-}
-
 function ResearchResults({ text }) {
   const results = parseResearchResults(text);
 
   if (!results) {
-    return <AnswerText text={text} />;
+    return <>{text}</>;
   }
 
   return (
@@ -319,12 +277,31 @@ export default function App() {
             conversationId: conversationRef.current,
             channel: "web",
             latitude,
-            longitude
+            longitude,
+            conversationHistory: messages
+              .slice(-10)
+              .map((message) => ({
+                role: message.role,
+                content: message.text
+              }))
           })
         }
       );
 
-      const data = await response.json();
+      const rawResponse = await response.text();
+      let data = null;
+
+      try {
+        data = rawResponse ? JSON.parse(rawResponse) : null;
+      } catch {
+        const preview = rawResponse
+          .slice(0, 180)
+          .replace(/\s+/g, " ")
+          .trim();
+        throw new Error(
+          `Fetch API returned invalid JSON (${response.status}). ${preview || "The server returned an unexpected response."}`
+        );
+      }
 
       if (!response.ok || !data?.success) {
         throw new Error(
