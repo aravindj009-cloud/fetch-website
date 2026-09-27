@@ -13,6 +13,23 @@ const makeId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const API_URL = "/api/web/agent.mjs";
+async function readApiJson(response) {
+  const contentType = response.headers.get("content-type") || "";
+  const body = await response.text();
+  if (!contentType.toLowerCase().includes("application/json")) {
+    const excerpt = body.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 150);
+    throw new Error(
+      `Fetch API returned ${response.status} instead of JSON at ${response.url}. ` +
+      `Check that api/web/agent.mjs is deployed on this domain. ${excerpt}`
+    );
+  }
+  try {
+    return JSON.parse(body);
+  } catch (_) {
+    throw new Error(`Fetch API returned invalid JSON (HTTP ${response.status}) at ${response.url}`);
+  }
+}
+
 const ACTIVE_ORDER_KEY = "fetch_active_order_id";
 const ORDER_POLL_INTERVAL_MS = 3000;
 const MAX_ORDER_CHECKS = 100;
@@ -278,7 +295,8 @@ export default function App() {
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            Accept: "application/json"
           },
           body: JSON.stringify({
             text,
@@ -290,7 +308,7 @@ export default function App() {
         }
       );
 
-      const data = await response.json();
+      const data = await readApiJson(response);
 
       if (!response.ok || !data?.success) {
         throw new Error(
@@ -429,7 +447,7 @@ export default function App() {
           }
         );
 
-        const data = await response.json();
+        const data = await readApiJson(response);
 
         if (!response.ok || !data?.success || !data?.order) {
           continue;
