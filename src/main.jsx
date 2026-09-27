@@ -249,6 +249,60 @@ export default function App() {
   const sendLockRef = useRef(false);
   const watchedOrdersRef = useRef(new Set());
   const lastRenderedOrderStatusRef = useRef(new Map());
+  const renderedOrderStateKeysRef = useRef(new Set());
+
+  function appendOrderStateMessage(
+    orderId,
+    status,
+    text,
+    network = "agent",
+    options = {}
+  ) {
+    const cleanStatus = String(status || "").trim();
+    const cleanOrderId = String(orderId || "").trim();
+    const cleanMessage = String(text || "").trim();
+    const force = Boolean(options.force);
+
+    if (!cleanOrderId || !cleanStatus || !cleanMessage) {
+      return false;
+    }
+
+    const stateKey = `${cleanOrderId}:${cleanStatus}`;
+    const messageKey = `${stateKey}:${cleanMessage.toLowerCase().replace(/\s+/g, " ")}`;
+
+    /*
+     * A background poll and the POST response can race each other.
+     * Never render the same state twice. For an intentional same-state
+     * customer action (e.g. Payment details / PAID), allow a new message.
+     */
+    if (!force && renderedOrderStateKeysRef.current.has(stateKey)) {
+      return false;
+    }
+
+    if (force && renderedOrderStateKeysRef.current.has(messageKey)) {
+      return false;
+    }
+
+    renderedOrderStateKeysRef.current.add(stateKey);
+    renderedOrderStateKeysRef.current.add(messageKey);
+    lastRenderedOrderStatusRef.current.set(cleanOrderId, cleanStatus);
+
+    setMessages((current) => [
+      ...current,
+      {
+        id: makeId(),
+        role: "assistant",
+        text: cleanMessage,
+        meta: {
+          status: cleanStatus,
+          network,
+          transient: force
+        }
+      }
+    ]);
+
+    return true;
+  }
 
   async function send(rawText) {
     const text = String(rawText || "").trim();
@@ -370,29 +424,32 @@ export default function App() {
         orderId: data.orderId || data.order_id || null
       });
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: makeId(),
-          role: "assistant",
-          text:
-            data.message ||
-            "I’m working on that.",
-          meta: {
-            status: data.status,
-            network: route
-          }
-        }
-      ]);
-
       const resolvedOrderId =
         data.orderId || data.order_id || null;
 
       if (resolvedOrderId && data.status) {
-        lastRenderedOrderStatusRef.current.set(
-          String(resolvedOrderId),
-          String(data.status)
+        appendOrderStateMessage(
+          resolvedOrderId,
+          data.status,
+          data.message || "I’m working on that.",
+          route,
+          {
+            force: /^(payment details|pay|paid|i paid|payment done|payment sent|i have paid|done paid)$/i.test(text.trim())
+          }
         );
+      } else {
+        setMessages((current) => [
+          ...current,
+          {
+            id: makeId(),
+            role: "assistant",
+            text: data.message || "I’m working on that.",
+            meta: {
+              status: data.status,
+              network: route
+            }
+          }
+        ]);
       }
 
       if (resolvedOrderId) {
@@ -519,41 +576,25 @@ export default function App() {
         }));
 
         const message = data.message;
-        const orderKey = String(orderId);
-        const previousStatus =
-          lastRenderedOrderStatusRef.current.get(orderKey);
         const currentStatus = String(order.status || "unknown");
 
         /*
-         * The POST response already renders the first state. The watcher
-         * must only render a message when the order actually transitions
-         * to a new state. Otherwise the same finding_shopper / price-ready
-         * message appears twice on the customer screen.
+         * Both the POST response and the background watcher can observe the
+         * same transition. Deduplicate by the authoritative order state, not
+         * by timing, so approval/payment transitions can never render twice.
          */
-        if (message && previousStatus !== currentStatus) {
-          lastRenderedOrderStatusRef.current.set(
-            orderKey,
-            currentStatus
+        if (message) {
+          appendOrderStateMessage(
+            orderId,
+            currentStatus,
+            message,
+            route
           );
-
-          setMessages((current) => [
-            ...current,
-            {
-              id: makeId(),
-              role: "assistant",
-              text: message,
-              meta: {
-                status: order.status,
-                network: route
-              }
-            }
-          ]);
         }
 
         if (data.terminal) {
           localStorage.removeItem("fetch_active_order_id");
           watchedOrdersRef.current.delete(String(orderId));
-          lastRenderedOrderStatusRef.current.delete(String(orderId));
           return;
         }
       } catch (error) {
@@ -765,6 +806,27 @@ export default function App() {
                       >
                         Approve order
                       </button>
+                    )}
+
+                    {message.meta?.status === "payment_pending" && (
+                      <>
+                        <button
+                          type="button"
+                          className="approvalButton"
+                          onClick={() => send("payment details")}
+                          disabled={busy}
+                        >
+                          Payment details
+                        </button>
+                        <button
+                          type="button"
+                          className="approvalButton"
+                          onClick={() => send("PAID")}
+                          disabled={busy}
+                        >
+                          I’ve paid the shopper
+                        </button>
+                      </>
                     )}
 
                     {message.meta?.network && (
