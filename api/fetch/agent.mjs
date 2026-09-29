@@ -682,11 +682,18 @@ export default async function handler(req, res) {
         ? provider.connect_path + "?conversationId=" + encodeURIComponent(conversationId)
         : null;
 
-      const providerMessage = connectorPending
-        ? `I can route this request through ${provider.name}, but that live connector is not connected to Fetch yet. I haven’t placed or attempted any order.`
-        : connectionRequired && connectUrl
-          ? `I found ${provider.name}. Connect it to Fetch and I can continue with this request.`
-          : clean(providerExecution.message) || "Fetch selected " + provider.name + " for this request.";
+      const providerMessage =
+        provider.id === "uber" && connectionRequired && connectUrl
+          ? "I can get that arranged through Uber. Connect Uber to Fetch once and I’ll continue."
+          : provider.id === "uber" && provider.connection_status === "connected"
+            ? "Uber is connected. I’m ready to work out the ride details and I’ll ask before booking."
+            : provider.id === "rapido"
+              ? "I can route this through Rapido. I’ll confirm the trip details with you before any ride is requested."
+              : connectorPending
+                ? `I can route this request through ${provider.name}, but that live connector is not connected to Fetch yet. I haven’t placed or attempted any order.`
+                : connectionRequired && connectUrl
+                  ? `I found ${provider.name}. Connect it to Fetch and I can continue with this request.`
+                  : clean(providerExecution.message) || "Fetch selected " + provider.name + " for this request.";
 
       return json(res, 200, {
         success: true,
