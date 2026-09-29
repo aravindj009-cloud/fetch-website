@@ -20,3 +20,6 @@ npm run build
 Import this project into Vercel. Vercel will detect Vite automatically. No environment variables are required for the landing page.
 
 The "Join early access" form currently shows a local success state. Connect it to your preferred form provider/Supabase table when you are ready.
+
+
+<!-- Production sync: Fetch provider routing and mobility UX verified on 2026-09-29. -->
