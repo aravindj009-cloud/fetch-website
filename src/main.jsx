@@ -317,6 +317,8 @@ export default function App() {
       }
 
       const route =
+        data?.provider?.name ||
+        data?.atc?.provider_name ||
         data?.atc?.resource_type ||
         data?.atc?.network ||
         data?.fetch?.intent?.domain ||
