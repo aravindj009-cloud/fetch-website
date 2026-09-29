@@ -12,7 +12,7 @@ const starters = [
 const makeId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-const API_URL = "/api/web/agent.mjs";
+const API_URL = "/api/fetch/agent.mjs";
 async function readApiJson(response) {
   const contentType = response.headers.get("content-type") || "";
   const body = await response.text();
