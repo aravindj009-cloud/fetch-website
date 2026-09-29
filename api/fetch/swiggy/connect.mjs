@@ -54,17 +54,23 @@ async function db(path, options = {}) {
 }
 
 function redirectUri(request) {
-  // Production must use the exact public callback that Swiggy allowlists.
-  // Do not register a generated *.vercel.app deployment URL.
-  const requestUrl = new URL(request.url);
-  const host = requestUrl.hostname.toLowerCase();
-
-  // Swiggy requires an exact redirect URI match. The Builders Club
-  // application currently allowlists the Vercel callback below.
+  // Swiggy requires an exact-match allowlisted redirect URI.
+  // Prefer the value configured in Vercel so the same code works across
+  // production/preview without ever inventing a callback URL.
   const configured = clean(process.env.SWIGGY_REDIRECT_URI);
   if (configured) return configured;
 
-  if (process.env.VERCEL_ENV === "production" || host === "tryfetch.in" || host === "www.tryfetch.in") {
+  const requestUrl = new URL(request.url);
+  const host = requestUrl.hostname.toLowerCase();
+
+  // Known Builders Club production callback used by the current Fetch
+  // deployment. Keep this deterministic until the allowlisted URI is
+  // changed in Swiggy's partner configuration.
+  if (
+    process.env.VERCEL_ENV === "production" ||
+    host === "tryfetch.in" ||
+    host === "www.tryfetch.in"
+  ) {
     return "https://fetch-website-tan.vercel.app/api/fetch/swiggy/callback.mjs";
   }
 
