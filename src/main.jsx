@@ -410,8 +410,9 @@ export default function App() {
             latitude,
             longitude,
             suppliedContext: {},
+            activeTask: task,
             history: messages
-              .slice(-8)
+              .slice(-10)
               .map((item) => ({ role: item.role, text: item.text }))
           })
         }
