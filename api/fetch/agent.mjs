@@ -694,6 +694,15 @@ export default async function handler(req, res) {
       conversationId: resolvedConversationId,
       channel: "web",
       activeTaskId: clean(body.activeTaskId) || null,
+      activeTaskContext: {
+        text: activeTask?.text || null,
+        stage: activeTask?.stage || null,
+        status: activeTask?.status || null,
+        network: activeTask?.network || null,
+        workflowId: activeTask?.workflowId || null,
+        orderId: activeTask?.orderId || null,
+        history: Array.isArray(body.history) ? body.history.slice(-10) : []
+      },
       suppliedIntent: body.suppliedIntent || null,
       suppliedContext: { ...(body.suppliedContext || {}), provider_access_token: swiggyToken?.access_token || null, provider_access_tokens: { swiggy_instamart: swiggyToken?.access_token || null, uber: uberToken?.access_token || null }, location: { latitude: body.latitude ?? null, longitude: body.longitude ?? null } }
     });
