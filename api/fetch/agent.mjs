@@ -303,11 +303,27 @@ async function dispatchPhysicalOrder(order) {
 
 function buildMessage(result) {
   if (result?.status === "needs_clarification") {
+    const reason = clean(result?.fetch?.decisions?.[0]?.decision?.reason);
+    if (reason === "mobility_provider_choice_required") {
+      return "Sure — I can get that arranged. Would you like Uber or Rapido?";
+    }
+
     return (
-      clean(result?.fetch?.decisions?.[0]?.decision?.reason) ||
       clean(result?.execution?.message) ||
       "I need a little more information."
     );
+  }
+
+  if (result?.status === "provider_connection_required" && result?.provider?.id === "uber") {
+    return "I can arrange that through Uber. Connect Uber to Fetch once, then I can continue.";
+  }
+
+  if (result?.status === "provider_ready" && result?.provider?.id === "uber") {
+    return "I’ve got Uber connected. I’m ready to work out the ride details and I’ll ask before I book it.";
+  }
+
+  if (result?.provider?.id === "rapido") {
+    return "I can route this through Rapido. I’ll confirm the trip details with you before any ride is requested.";
   }
 
   if (result?.status === "partner_offered") {
