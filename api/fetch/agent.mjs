@@ -1,5 +1,5 @@
 import { executeUniversalFetchRequest } from "../../lib/fetch-universal-execution.mjs";
-import { atcSafe, atcCreateTaskForOrder, atcSelectPartnerStoreForOrder, atcRecordEvent } from "../../lib/atc.mjs";
+import { atcSafe, atcCreateTaskForOrder, atcSyncTaskFromOrder, atcSelectPartnerStoreForOrder, atcSelectResourceForOrder, atcRecordAssignment, atcRecordEvent } from "../../lib/atc.mjs";
 import { offerOrderToPartnerStore } from "../../lib/partner-store.mjs";
 import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
 import { getUberToken } from "../../lib/uber-oauth.mjs";
@@ -118,13 +118,13 @@ async function supabaseRequest(path, options = {}) {
   return data;
 }
 
-function webCustomerPhone(conversationId) {
+function webCustomerPhone(resolvedConversationId) {
   const raw = clean(conversationId || `web:${Date.now()}`);
   return `web:${raw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80)}`;
 }
 
-async function getOrCreateWebCustomer(conversationId) {
-  const phone = webCustomerPhone(conversationId);
+async function getOrCreateWebCustomer(resolvedConversationId) {
+  const phone = webCustomerPhone(resolvedConversationId);
 
   const existing = await supabaseRequest(
     `customers?phone=eq.${encodeURIComponent(phone)}&select=*&limit=1`
@@ -415,6 +415,173 @@ function buildOrderStatusMessage(order) {
   return null;
 }
 
+
+async function approvePhysicalOrder({ orderId, conversationId }) {
+  const id = clean(orderId);
+  const conversation = clean(resolvedConversationId);
+
+  if (!id || !conversation) {
+    return {
+      success: false,
+      status: "invalid_request",
+      error: "orderId and conversationId are required"
+    };
+  }
+
+  const customer = await getOrCreateWebCustomer(conversation);
+
+  const rows = await supabaseRequest(
+    `orders?id=eq.${encodeURIComponent(id)}&select=*&limit=1`
+  );
+  const order = Array.isArray(rows) && rows.length ? rows[0] : null;
+
+  if (!order) {
+    return { success: false, status: "order_not_found", error: "order_not_found" };
+  }
+
+  if (String(order.customer_id) !== String(customer.id)) {
+    return { success: false, status: "forbidden", error: "ORDER_NOT_OWNED_BY_SESSION" };
+  }
+
+  const currentStatus = clean(order.status).toLowerCase();
+
+  if (
+    [
+      "finding_shopper",
+      "shopper_assigned",
+      "shopping",
+      "picked_up",
+      "out_for_delivery",
+      "delivered",
+      "completed"
+    ].includes(currentStatus)
+  ) {
+    return {
+      success: true,
+      status: currentStatus,
+      order_id: order.id,
+      message:
+        currentStatus === "finding_shopper"
+          ? "Approved. Fetch is finding a shopper now."
+          : "This order has already moved past customer approval.",
+      order
+    };
+  }
+
+  if (currentStatus !== "awaiting_customer_price_confirmation") {
+    return {
+      success: false,
+      status: currentStatus || "unknown",
+      error: "ORDER_NOT_AWAITING_CUSTOMER_APPROVAL",
+      message: "This order is not currently waiting for customer approval."
+    };
+  }
+
+  const updatedRows = await supabaseRequest(
+    `orders?id=eq.${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ status: "finding_shopper" })
+    }
+  );
+
+  const updatedOrder = Array.isArray(updatedRows) ? updatedRows[0] : updatedRows;
+
+  await atcSafe(
+    () => atcSyncTaskFromOrder(updatedOrder || order),
+    "web_approval_task_sync"
+  );
+
+  await atcSafe(
+    () =>
+      atcRecordEvent({
+        orderId: id,
+        eventType: "customer_approved_price",
+        fromStatus: currentStatus,
+        toStatus: "finding_shopper",
+        actorType: "customer",
+        actorId: customer.id,
+        metadata: { source: "fetch_web", conversation_id: conversation }
+      }),
+    "web_customer_approval_event"
+  );
+
+  let shopperMatch = null;
+  try {
+    shopperMatch = await atcSelectResourceForOrder({
+      order: updatedOrder || order
+    });
+  } catch (error) {
+    console.error("FETCH WEB APPROVAL SHOPPER MATCH ERROR", error);
+  }
+
+  if (shopperMatch?.shopperId) {
+    const existingJobs = await supabaseRequest(
+      `shopper_jobs?order_id=eq.${encodeURIComponent(id)}&status=in.(offered,accepted)&select=*&limit=1`
+    );
+
+    let job = Array.isArray(existingJobs) && existingJobs.length
+      ? existingJobs[0]
+      : null;
+
+    if (!job) {
+      const jobRows = await supabaseRequest("shopper_jobs", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({
+          order_id: id,
+          shopper_id: shopperMatch.shopperId,
+          status: "offered"
+        })
+      });
+      job = Array.isArray(jobRows) ? jobRows[0] : jobRows;
+    }
+
+    if (job?.id) {
+      await atcSafe(
+        () =>
+          atcRecordAssignment({
+            orderId: id,
+            shopperId: shopperMatch.shopperId,
+            status: "offered",
+            jobId: job.id
+          }),
+        "web_approval_assignment"
+      );
+
+      await atcSafe(
+        () =>
+          atcRecordEvent({
+            orderId: id,
+            eventType: "shopper_offer_created",
+            actorType: "atc",
+            actorId: shopperMatch.shopperId,
+            metadata: {
+              job_id: job.id,
+              distance_km: shopperMatch.distanceKm,
+              source: "web_customer_approval"
+            }
+          }),
+        "web_approval_shopper_offer_event"
+      );
+    }
+  }
+
+  return {
+    success: true,
+    status: "finding_shopper",
+    order_id: id,
+    message: shopperMatch?.shopperId
+      ? "Approved. Fetch has started the shopper matching process."
+      : "Approved. Fetch is finding an available shopper now.",
+    shopper_match: shopperMatch
+      ? { distance_km: shopperMatch.distanceKm, score: shopperMatch.score }
+      : null,
+    order: updatedOrder || order
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -478,8 +645,24 @@ export default async function handler(req, res) {
         ? JSON.parse(req.body || "{}")
         : req.body || {};
 
+    const action = clean(body.action);
+    const conversationId = clean(body.resolvedConversationId);
+
+    if (action === "approve_order") {
+      const approval = await approvePhysicalOrder({
+        orderId: clean(body.orderId),
+        conversationId
+      });
+
+      return json(
+        res,
+        approval.success ? 200 : (approval.status === "forbidden" ? 403 : 400),
+        approval
+      );
+    }
+
     const text = clean(body.text);
-    const conversationId = clean(body.conversationId) || `web:${Date.now()}`;
+    const resolvedConversationId = conversationId || `web:${Date.now()}`;
 
     if (!text) {
       return json(res, 400, {
@@ -488,13 +671,13 @@ export default async function handler(req, res) {
       });
     }
 
-    const swiggyToken = await getSwiggyToken(conversationId);
-    const uberToken = await getUberToken(conversationId);
+    const swiggyToken = await getSwiggyToken(resolvedConversationId);
+    const uberToken = await getUberToken(resolvedConversationId);
 
     const universal = await executeUniversalFetchRequest({
       text,
       customerId: clean(body.customerId) || null,
-      conversationId,
+      conversationId: resolvedConversationId,
       channel: "web",
       activeTaskId: clean(body.activeTaskId) || null,
       suppliedIntent: body.suppliedIntent || null,
@@ -728,7 +911,7 @@ export default async function handler(req, res) {
       const connectionRequired = provider.connection_status !== "connected";
       const connectorPending = ["connector_pending", "not_enabled"].includes(provider.connection_status);
       const connectUrl = connectionRequired && provider.connect_path
-        ? provider.connect_path + "?conversationId=" + encodeURIComponent(conversationId)
+        ? provider.connect_path + "?conversationId=" + encodeURIComponent(resolvedConversationId)
         : null;
 
       const providerMessage =
@@ -819,7 +1002,7 @@ export default async function handler(req, res) {
     }
 
     const entities = universal?.fetch?.decisions?.[0]?.entities || {};
-    const customer = await getOrCreateWebCustomer(conversationId);
+    const customer = await getOrCreateWebCustomer(resolvedConversationId);
 
     const latitude = body.latitude;
     const longitude = body.longitude;
