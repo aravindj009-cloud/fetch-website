@@ -269,10 +269,13 @@ export default function App() {
         /\b(buy|get|fetch|bring|pick up|pickup|purchase|deliver|delivery|order|need|source|find)\b/i.test(text) &&
         !/\b(news|restaurant|weather|remember|calendar|book a flight|research|explain)\b/i.test(text);
 
+      const isProviderCandidate =
+        /\b(instamart|swiggy|grocery|groceries|milk|bread|eggs|rice|snacks|biscuits|kitkat|munch|water|cab|taxi|ride|uber)\b/i.test(text);
+
       let latitude = null;
       let longitude = null;
 
-      if (isPhysicalRequest && navigator.geolocation) {
+      if (isPhysicalRequest && !isProviderCandidate && navigator.geolocation) {
         const position = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
             resolve,
