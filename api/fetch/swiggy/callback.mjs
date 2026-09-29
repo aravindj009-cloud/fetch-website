@@ -1,4 +1,4 @@
-import { consumeSwiggyState, exchangeSwiggyCode, saveSwiggyToken } from "../../../../lib/swiggy-oauth-v2.mjs";
+import { consumeSwiggyState, exchangeSwiggyCode, saveSwiggyToken } from "../../../lib/swiggy-oauth-v2.mjs";
 
 function clean(value) { return String(value ?? "").trim(); }
 
