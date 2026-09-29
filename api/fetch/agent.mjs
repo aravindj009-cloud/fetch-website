@@ -4,6 +4,7 @@ import { offerOrderToPartnerStore } from "../../lib/partner-store.mjs";
 import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
 import { getUberToken } from "../../lib/uber-oauth.mjs";
 import { prepareInstamartOrder } from "../../lib/fetch-instamart-execution.mjs";
+import { prepareUberRide } from "../../lib/uber-ride.mjs";
 
 const SUPABASE_URL =
   process.env.VITE_SUPABASE_URL ||
@@ -640,6 +641,53 @@ export default async function handler(req, res) {
 
       const provider = universal.provider;
       const providerExecution = universal.execution || {};
+
+      if (
+        provider.id === "uber" &&
+        uberToken?.access_token &&
+        body.suppliedContext?.local_demo !== true
+      ) {
+        const entities = universal?.fetch?.decisions?.[0]?.entities || {};
+        const execution = await prepareUberRide({
+          accessToken: uberToken.access_token,
+          pickupLatitude: body.latitude,
+          pickupLongitude: body.longitude,
+          destination: entities.destination
+        });
+
+        return json(res, 200, {
+          success: true,
+          status: execution.status || "provider_ready",
+          workflow_id: universal.workflow_id || null,
+          message: execution.message || "I’ve worked out the Uber ride. Review it before I request anything.",
+          fetch: {
+            intent: universal?.fetch?.decisions?.[0]?.intent || null,
+            confidence: universal?.fetch?.decisions?.[0]?.intent?.confidence ?? null,
+            entities,
+            plan: universal?.fetch?.decisions?.[0]?.plan || null
+          },
+          atc: universal.atc || null,
+          provider: {
+            id: provider.id,
+            name: provider.name,
+            company: provider.company,
+            category: provider.category,
+            capabilities: provider.capabilities,
+            transport: provider.transport,
+            connection_status: "connected",
+            web_url: provider.web_url
+          },
+          execution: {
+            success: !!execution.success,
+            status: execution.status || null,
+            message: execution.message || null,
+            execution_type: "uber_ride_api",
+            side_effect: false,
+            confirmation_required: true
+          },
+          uber_preview: execution
+        });
+      }
 
       if (
         provider.id === "swiggy_instamart" &&
