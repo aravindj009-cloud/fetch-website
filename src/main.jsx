@@ -13,6 +13,35 @@ const starters = [
 const makeId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+function displayMessage(value, fallback = "I’m working on that.") {
+  if (typeof value === "string") return value.trim() || fallback;
+  if (value == null) return fallback;
+
+  if (typeof value === "object") {
+    const candidates = [
+      value.text,
+      value.message,
+      value.content,
+      value.output_text,
+      value.error?.message
+    ];
+
+    const readable = candidates.find(
+      (item) => typeof item === "string" && item.trim()
+    );
+
+    if (readable) return readable.trim();
+
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return fallback;
+    }
+  }
+
+  return String(value);
+}
+
 const API_URL = "/api/fetch/agent.mjs";
 async function readApiJson(response) {
   const contentType = response.headers.get("content-type") || "";
