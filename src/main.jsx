@@ -4,9 +4,9 @@ import "./styles.css";
 
 const starters = [
   "Get me 2 KitKats and milk",
-  "Find the latest news about AI agents",
+  "Book me an Uber to Technopark tomorrow at 9 AM",
   "Find me a good restaurant for tonight",
-  "Remember that I prefer things after 7 PM"
+  "Find the latest news about AI agents"
 ];
 
 const makeId = () =>
@@ -1008,13 +1008,13 @@ export default function App() {
           <h1>
             Tell Fetch what you need.
             <br />
-            <em>We’ll figure out how.</em>
+            <em>Fetch figures out the rest.</em>
           </h1>
 
           <p>
             Text naturally. Fetch understands the task,
-            plans the work and coordinates the resources
-            needed to get it done.
+            chooses the right service and executes the work
+            for you.
           </p>
         </section>
 
@@ -1438,18 +1438,18 @@ export default function App() {
 
           <aside>
 
-            <small>FETCH ATC</small>
+            <small>FETCH · EXECUTION LAYER</small>
 
             <h2>
               You ask.
               <br />
-              <em>Fetch coordinates.</em>
+              <em>Fetch acts.</em>
             </h2>
 
             <p>
-              The user doesn't choose the service.
-              Fetch determines the execution path
-              behind the scenes.
+              You don't need to know which app to use.
+              Fetch decides the execution path and handles
+              the handoff behind the scenes.
             </p>
 
             <div className="flow">
@@ -1468,12 +1468,12 @@ export default function App() {
                 [
                   "03",
                   "ATC",
-                  "Choose resource"
+                  "Choose service"
                 ],
                 [
                   "04",
                   "Act",
-                  "Execute + update"
+                  "Execute + confirm"
                 ]
               ].map((item, index) => (
 
@@ -1561,8 +1561,8 @@ export default function App() {
 
             <p className="note">
               Internal routing stays behind Fetch.
-              Customers don't need to choose a
-              store or service.
+              Ask once. Fetch coordinates the service,
+              executes the task and keeps you updated.
             </p>
 
           </aside>
