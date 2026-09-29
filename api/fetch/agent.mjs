@@ -416,6 +416,7 @@ function buildOrderStatusMessage(order) {
 }
 
 
+/* Web approval flow: customer approval is an explicit execution boundary. */
 async function approvePhysicalOrder({ orderId, conversationId }) {
   const id = clean(orderId);
   const conversation = clean(conversationId);
