@@ -446,7 +446,9 @@ export default function App() {
             network: route,
             connect_url: data?.provider?.connect_url || null,
             provider_name: data?.provider?.name || null,
-            provider_id: data?.provider?.id || null
+            provider_id: data?.provider?.id || null,
+            action_url: data?.provider?.action_url || null,
+            action_label: data?.provider?.action_label || null
           }
         }
       ]);
@@ -1427,6 +1429,23 @@ export default function App() {
                               : "Build cart"}
                           </button>
                         ) : null}
+                      </div>
+                    )}
+
+                    {message.meta?.action_url && (
+                      <div className="providerConnectCard">
+                        <div>
+                          <strong>Continue with Rapido</strong>
+                          <span>Fetch has prepared the handoff. Confirm your trip details in Rapido before booking.</span>
+                        </div>
+                        <a
+                          className="approvalButton"
+                          href={message.meta.action_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {message.meta.action_label || "Open service"}
+                        </a>
                       </div>
                     )}
 
