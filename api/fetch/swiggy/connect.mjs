@@ -1,7 +1,4 @@
-// Production deployment marker: Swiggy OAuth connect flow is live-ready.\nconst SUPABASE_URL = process.env.VITE_SUPABASE_URL || "https://skfxzagxlxputwpwxwbe.supabase.co";
-const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY;
-
-const clean = (value) => String(value ?? "").trim();
+// Production deployment marker: Swiggy OAuth connect flow is live-ready.\nconst clean = (value) => String(value ?? "").trim();
 
 function base64Url(bytes) {
   let binary = "";
@@ -22,15 +19,18 @@ async function pkceChallenge(verifier) {
 }
 
 async function db(path, options = {}) {
-  if (!SUPABASE_KEY) {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || "https://skfxzagxlxputwpwxwbe.supabase.co";
+  const supabaseKey = process.env.SUPABASE_SECRET_KEY;
+
+  if (!supabaseKey) {
     throw new Error("SUPABASE_SECRET_KEY is missing in Vercel");
   }
 
-  const response = await fetch(SUPABASE_URL + "/rest/v1/" + path, {
+  const response = await fetch(supabaseUrl + "/rest/v1/" + path, {
     ...options,
     headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: "Bearer " + SUPABASE_KEY,
+      apikey: supabaseKey,
+      Authorization: "Bearer " + supabaseKey,
       "Content-Type": "application/json",
       ...(options.headers || {})
     }
