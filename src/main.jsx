@@ -34,6 +34,15 @@ const ACTIVE_ORDER_KEY = "fetch_active_order_id";
 const ORDER_POLL_INTERVAL_MS = 3000;
 const MAX_ORDER_CHECKS = 100;
 
+function getSwiggyConnectionState() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("swiggy");
+  } catch {
+    return null;
+  }
+}
+
 function getConversationId() {
   const existing = localStorage.getItem("fetch_conversation_id");
 
@@ -287,6 +296,7 @@ export default function App() {
   const [selectedSpins, setSelectedSpins] = useState({});
   const [selectedPayment, setSelectedPayment] = useState("");
   const [selectedIntentApp, setSelectedIntentApp] = useState("");
+  const [connectionNotice, setConnectionNotice] = useState(null);
 
   const activeWatchRef = useRef(null);
   const lastOrderMessageRef = useRef(new Map());
@@ -1291,14 +1301,20 @@ export default function App() {
                     )}
 
                     {message.meta?.connect_url && (
-                      <button
-                        type="button"
-                        className="approvalButton"
-                        onClick={() => window.location.href = message.meta.connect_url}
-                        disabled={busy}
-                      >
-                        Connect {message.meta?.provider_name || "service"}
-                      </button>
+                      <div className="providerConnectCard">
+                        <div>
+                          <strong>One-time connection</strong>
+                          <span>Connect {message.meta?.provider_name || "this service"} to Fetch so I can execute this task for you.</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="approvalButton"
+                          onClick={() => window.location.href = message.meta.connect_url}
+                          disabled={busy}
+                        >
+                          Connect {message.meta?.provider_name || "service"}
+                        </button>
+                      </div>
                     )}
 
                     {message.meta?.status === "awaiting_customer_price_confirmation" && (
