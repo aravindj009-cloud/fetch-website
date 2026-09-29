@@ -20,7 +20,7 @@ async function readApiJson(response) {
     const excerpt = body.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 150);
     throw new Error(
       `Fetch API returned ${response.status} instead of JSON at ${response.url}. ` +
-      `Check that api/web/agent.mjs is deployed on this domain. ${excerpt}`
+      `Check that /api/fetch/agent.mjs is deployed on this domain. ${excerpt}`
     );
   }
   try {
@@ -66,6 +66,34 @@ function getHost(url) {
   } catch {
     return "Web source";
   }
+}
+
+function flowNodeClass(task, index) {
+  if (!task) return index === 0 ? "active" : "waiting";
+
+  const status = String(task.status || "").toLowerCase();
+  const stage = String(task.stage || "").toLowerCase();
+
+  if (status === "error" || stage === "error") {
+    return index === 0 ? "error" : "waiting";
+  }
+
+  if (
+    ["done", "order_placed", "delivered", "completed"].includes(status) ||
+    ["done", "order placed", "delivered", "demo order placed"].includes(stage)
+  ) {
+    return "complete";
+  }
+
+  let activeIndex = 0;
+  if (["understanding"].includes(stage)) activeIndex = 0;
+  else if (["planning", "coordinating", "finding partner store", "finding shopper", "location needed", "needs input"].includes(stage)) activeIndex = 1;
+  else if (["partner store contacted", "price ready for approval", "cart ready for approval", "products ready", "address selection"].some((value) => stage.includes(value))) activeIndex = 2;
+  else if (["shopping", "shopper assigned", "picked up", "out for delivery", "order placed", "cart ready for approval"].some((value) => stage.includes(value))) activeIndex = 3;
+
+  if (index < activeIndex) return "complete";
+  if (index === activeIndex) return "active";
+  return "waiting";
 }
 
 function parseResearchResults(text) {
@@ -1029,6 +1057,7 @@ export default function App() {
                                       type="radio"
                                       name={`fetch-product-${requested}`}
                                       checked={selectedSpins[requested] === option.spinId}
+                                      disabled={option.inStock === false || busy}
                                       onChange={() => setSelectedSpins((current) => ({ ...current, [requested]: option.spinId }))}
                                     />
                                     <span className="liveProductInfo">
@@ -1051,9 +1080,9 @@ export default function App() {
                         ) : instamartLive.cart ? (
                           <>
                             <div style={{fontSize:"12px",fontWeight:800}}>Live cart</div>
-                            <pre style={{fontSize:"10px",whiteSpace:"pre-wrap",opacity:.65,maxHeight:160,overflow:"auto"}}>
-                              {JSON.stringify(instamartLive.cart, null, 2)}
-                            </pre>
+                            <div style={{fontSize:"11px",opacity:.65,marginTop:"8px"}}>
+                              Live cart retrieved from Swiggy. Review the total and payment method below.
+                            </div>
                             <div className="liveCartTotal">
                               <span>Total</span>
                               <span>₹{instamartLive.cart?.data?.pricing?.to_pay ?? instamartLive.cart?.pricing?.to_pay ?? instamartLive.cart?.to_pay ?? "—"}</span>
