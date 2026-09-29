@@ -293,6 +293,7 @@ export default function App() {
   const [task, setTask] = useState(null);
   const [instamartDemo, setInstamartDemo] = useState(null);
   const [instamartLive, setInstamartLive] = useState(null);
+  const [uberLive, setUberLive] = useState(null);
   const [selectedSpins, setSelectedSpins] = useState({});
   const [selectedPayment, setSelectedPayment] = useState("");
   const [selectedIntentApp, setSelectedIntentApp] = useState("");
@@ -457,6 +458,12 @@ export default function App() {
         setInstamartDemo(null);
       }
 
+      if (data?.provider?.id === "uber" && data?.uber_preview) {
+        setUberLive(data.uber_preview);
+        setInstamartLive(null);
+        setInstamartDemo(null);
+      }
+
       const resolvedOrderId =
         data.orderId || data.order_id || null;
 
@@ -492,6 +499,68 @@ export default function App() {
       setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
+    }
+  }
+
+  async function runUberAction(action) {
+    if (!uberLive || busy) return;
+
+    setBusy(true);
+    try {
+      if (action === "checkout") {
+        const response = await fetch("/api/fetch/uber/execute.mjs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            action: "checkout",
+            conversationId: conversationRef.current,
+            preview: uberLive,
+            confirmed: true
+          })
+        });
+
+        const data = await readApiJson(response);
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.message || data?.error || "Uber could not request the ride.");
+        }
+
+        setUberLive((current) => ({ ...(current || {}), ...data, request_id: data.request_id }));
+        setTask((current) => ({
+          ...(current || {}),
+          stage: "ride requested",
+          status: data.status,
+          network: "Uber",
+          requestId: data.request_id
+        }));
+        setMessages((current) => [...current, {
+          id: makeId(),
+          role: "assistant",
+          text: "Done — I’ve requested the Uber. I’ll keep you posted on the ride status.",
+          meta: { status: data.status, network: "Uber" }
+        }]);
+      } else if (action === "track") {
+        const response = await fetch("/api/fetch/uber/execute.mjs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            action: "track",
+            conversationId: conversationRef.current,
+            requestId: uberLive.request_id
+          })
+        });
+        const data = await readApiJson(response);
+        if (!response.ok || !data?.success) throw new Error(data?.message || data?.error || "Could not load the ride.");
+        setUberLive((current) => ({ ...(current || {}), ...data, tracking: data.data }));
+      }
+    } catch (error) {
+      setMessages((current) => [...current, {
+        id: makeId(),
+        role: "assistant",
+        text: error?.message || "I couldn't complete that Uber step.",
+        meta: { status: "error", network: "Uber" }
+      }]);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1074,6 +1143,57 @@ export default function App() {
                       <ResearchResults text={message.text} />
                     ) : (
                       message.text
+                    )}
+
+                    {message.id === messages[messages.length - 1]?.id && uberLive && (
+                      <div className="instamartLiveCard uberLiveCard">
+                        <div className="liveBadge">LIVE UBER · FETCH EXECUTION</div>
+                        <div style={{fontSize:"13px",fontWeight:800,marginTop:"8px"}}>
+                          {uberLive.pickup?.label || "Current location"} → {uberLive.destination?.label || "Destination"}
+                        </div>
+
+                        {uberLive.status === "order_placed" || uberLive.request_id ? (
+                          <>
+                            <div style={{fontSize:"12px",fontWeight:800,marginTop:"12px"}}>Ride requested ✓</div>
+                            <div className="demoTotal">
+                              <span>Status</span><b>{uberLive.status || "processing"}</b>
+                            </div>
+                            <div className="demoTotal">
+                              <span>Request</span><b>{uberLive.request_id || "—"}</b>
+                            </div>
+                            {uberLive.tracking && (
+                              <div className="demoTracking">
+                                <strong>Live ride</strong>
+                                <span>{uberLive.tracking?.status || "Updating…"}</span>
+                              </div>
+                            )}
+                            <button type="button" className="approvalButton" onClick={() => runUberAction("track")} disabled={busy}>
+                              Refresh ride status
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="demoProduct">
+                              <span>
+                                <strong>{uberLive.product?.display_name || "Uber"}</strong>
+                                <small>{uberLive.trip?.duration_estimate ? Math.round(Number(uberLive.trip.duration_estimate) / 60) + " min trip" : "Ride estimate"}</small>
+                              </span>
+                              <b>{uberLive.fare?.display || (uberLive.fare?.value != null ? "₹" + uberLive.fare.value : "Fare shown by Uber")}</b>
+                            </div>
+                            <div className="demoTotal">
+                              <span>Pickup ETA</span>
+                              <b>{uberLive.pickup_estimate != null ? uberLive.pickup_estimate + " min" : "—"}</b>
+                            </div>
+                            <div className="demoTotal">
+                              <span>Destination</span>
+                              <b>{uberLive.destination?.label || "—"}</b>
+                            </div>
+                            <button type="button" className="approvalButton" onClick={() => runUberAction("checkout")} disabled={busy}>
+                              Confirm & request Uber
+                            </button>
+                          </>
+                        )}
+                      </div>
                     )}
 
                     {message.id === messages[messages.length - 1]?.id && instamartLive && (
