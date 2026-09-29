@@ -251,6 +251,48 @@ function parseResearchResults(text) {
   return results.length ? results : null;
 }
 
+function formatInlineMarkdown(value) {
+  return String(value || "")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/__(.+?)__/g, "<strong>$1</strong>")
+    .replace(/\*([^*\n]+?)\*/g, "<em>$1</em>");
+}
+
+function AssistantMessage({ text }) {
+  const raw = String(text || "").replace(/\r/g, "").trim();
+  const blocks = raw.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  if (!blocks.length) return null;
+
+  return (
+    <div className="assistantMessage">
+      {blocks.map((block, index) => {
+        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+        if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
+          const content = lines[0].replace(/^#{1,3}\s+/, "");
+          return <h4 key={index} dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(content) }} />;
+        }
+
+        const listLines = lines.filter((line) => /^(?:[-*•]|\d+\.)\s+/.test(line));
+        if (listLines.length === lines.length && listLines.length > 0) {
+          const ordered = /^\d+\./.test(lines[0]);
+          const Tag = ordered ? "ol" : "ul";
+          return (
+            <Tag key={index}>
+              {lines.map((line, i) => (
+                <li key={i} dangerouslySetInnerHTML={{
+                  __html: formatInlineMarkdown(line.replace(/^(?:[-*•]|\d+\.)\s+/, ""))
+                }} />
+              ))}
+            </Tag>
+          );
+        }
+
+        return <p key={index} dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(lines.join(" ")) }} />;
+      })}
+    </div>
+  );
+}
+
 function ResearchResults({ text }) {
   const results = parseResearchResults(text);
 
@@ -486,14 +528,23 @@ export default function App() {
           ].includes(data?.status)
         );
 
-      if (isExecution) {
+      if (data?.active_task) {
+        setTask(data.active_task);
+      } else if (isExecution) {
         setTask({
           text,
+          latestText: text,
+          objective: task?.objective || text,
           stage,
           status: data.status,
+          domain: data?.fetch?.intent?.domain || null,
+          intent: data?.fetch?.intent || null,
+          entities: data?.fetch?.entities || null,
+          plan: data?.fetch?.plan || null,
           network: route,
           workflowId: data.workflow_id,
-          orderId: data.orderId || data.order_id || null
+          orderId: data.orderId || data.order_id || null,
+          lastResponse: displayMessage(data.message)
         });
       } else {
         setTask(null);
@@ -1287,7 +1338,7 @@ export default function App() {
                   >
 
                     {message.role === "assistant" ? (
-                      <ResearchResults text={message.text} />
+                      <AssistantMessage text={message.text} />
                     ) : (
                       message.text
                     )}
