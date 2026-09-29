@@ -484,6 +484,138 @@ export default async function handler(req, res) {
      * engine. The provider becomes the execution path.
      */
     if (universal?.provider?.id) {
+      /*
+       * LOCAL DEMO MODE
+       *
+       * Swiggy asks platform operators to build locally first. This mode
+       * exercises the Fetch UX without pretending that a real Swiggy order
+       * has been placed. It is enabled only when the browser explicitly
+       * sends suppliedContext.local_demo === true.
+       */
+      if (
+        universal.provider.id === "swiggy_instamart" &&
+        body.suppliedContext?.local_demo === true
+      ) {
+        const demoAction = clean(body.demoAction) || "prepare";
+        const entities = universal?.fetch?.decisions?.[0]?.entities || {};
+        const requestedItems = Array.isArray(entities?.items) && entities.items.length
+          ? entities.items
+          : [{ quantity: 1, item: "milk" }];
+
+        const catalog = {
+          milk: { name: "Full Cream Milk", pack: "1 L", price: 68 },
+          bread: { name: "Sandwich Bread", pack: "400 g", price: 45 },
+          eggs: { name: "Farm Fresh Eggs", pack: "6 pcs", price: 62 },
+          kitkat: { name: "KitKat Milk Chocolate", pack: "2 Finger", price: 20 },
+          rice: { name: "Everyday Rice", pack: "5 kg", price: 399 },
+          biscuits: { name: "Marie Biscuits", pack: "250 g", price: 35 },
+          water: { name: "Packaged Drinking Water", pack: "1 L", price: 20 }
+        };
+
+        const products = requestedItems.map((item) => {
+          const key = clean(item?.item).toLowerCase().replace(/\s+/g, "");
+          const base = catalog[key] || { name: clean(item?.item) || "Requested item", pack: "1 unit", price: 99 };
+          const quantity = Math.max(1, Number(item?.quantity || 1));
+          return {
+            requested: clean(item?.item),
+            quantity,
+            ...base,
+            line_total: base.price * quantity
+          };
+        });
+
+        const subtotal = products.reduce((sum, item) => sum + item.line_total, 0);
+        const deliveryFee = 25;
+        const total = subtotal + deliveryFee;
+
+        const preview = {
+          address: "Demo delivery address",
+          products,
+          subtotal,
+          delivery_fee: deliveryFee,
+          total
+        };
+
+        if (demoAction === "cart") {
+          return json(res, 200, {
+            success: true,
+            status: "awaiting_checkout_confirmation",
+            workflow_id: universal.workflow_id || null,
+            message: "I’ve prepared the Instamart cart. Review the total before I place anything.",
+            provider: {
+              id: universal.provider.id,
+              name: universal.provider.name,
+              company: universal.provider.company,
+              category: universal.provider.category,
+              connection_status: "connected_demo"
+            },
+            demo_stage: "cart_ready",
+            instamart_preview: preview,
+            execution: {
+              success: true,
+              status: "awaiting_checkout_confirmation",
+              side_effect: false,
+              confirmation_required: true,
+              demo: true
+            }
+          });
+        }
+
+        if (demoAction === "checkout") {
+          const demoOrderId = "FETCH-DEMO-" + Date.now().toString(36).toUpperCase();
+          return json(res, 200, {
+            success: true,
+            status: "order_placed",
+            workflow_id: universal.workflow_id || null,
+            order_id: demoOrderId,
+            message: "Done. Your demo Instamart order " + demoOrderId + " has been placed.",
+            provider: {
+              id: universal.provider.id,
+              name: universal.provider.name,
+              company: universal.provider.company,
+              category: universal.provider.category,
+              connection_status: "connected_demo"
+            },
+            demo_stage: "order_placed",
+            instamart_preview: {
+              ...preview,
+              order_id: demoOrderId,
+              tracking: "Order confirmed · Preparing · Out for delivery · Delivered"
+            },
+            execution: {
+              success: true,
+              status: "order_placed",
+              side_effect: false,
+              confirmation_required: false,
+              demo: true
+            }
+          });
+        }
+
+        return json(res, 200, {
+          success: true,
+          status: "awaiting_product_selection",
+          workflow_id: universal.workflow_id || null,
+          message: "I found the requested items on Instamart. Review the products before I build the cart.",
+          provider: {
+            id: universal.provider.id,
+            name: universal.provider.name,
+            company: universal.provider.company,
+            category: universal.provider.category,
+            connection_status: "connected_demo"
+          },
+          demo_stage: "products_found",
+          instamart_preview: preview,
+          execution: {
+            success: true,
+            status: "awaiting_product_selection",
+            side_effect: false,
+            confirmation_required: true,
+            demo: true
+          }
+        });
+      }
+
       const provider = universal.provider;
       const providerExecution = universal.execution || {};
 
