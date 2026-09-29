@@ -518,3 +518,61 @@ aside > p {
 
   .hint { display: none; }
 }
+
+
+.providerConnectCard {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #1112;
+  border-radius: 14px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.providerConnectCard > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.providerConnectCard strong { font-size: 11px; }
+.providerConnectCard span { font-size: 10px; color: #777; line-height: 1.4; }
+.providerConnectCard .approvalButton { flex-shrink: 0; }
+
+.connectionNotice {
+  position: fixed;
+  z-index: 20;
+  top: 82px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(620px, calc(100vw - 32px));
+  padding: 13px 15px;
+  border: 1px solid #1111;
+  border-radius: 16px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 12px 40px #0001;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.connectionNotice > span {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e6eee9;
+  color: #254c38;
+  font-size: 13px;
+}
+.connectionNotice > div { flex: 1; }
+.connectionNotice strong, .connectionNotice small { display: block; }
+.connectionNotice strong { font-size: 11px; }
+.connectionNotice small { margin-top: 3px; font-size: 10px; color: #777; line-height: 1.4; }
+.connectionNotice button {
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  color: #777;
+}
