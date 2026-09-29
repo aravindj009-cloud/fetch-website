@@ -251,20 +251,33 @@ function parseResearchResults(text) {
   return results.length ? results : null;
 }
 
-function formatInlineMarkdown(value) {
+function escapeHtml(value) {
   return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function formatInlineMarkdown(value) {
+  let html = escapeHtml(value);
+  html = html
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+    .replace(/(^|\s)(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noreferrer">$2</a>')
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/__(.+?)__/g, "<strong>$1</strong>")
     .replace(/\*([^*\n]+?)\*/g, "<em>$1</em>")
     .replace(/\`([^\`]+?)\`/g, "<code>$1</code>");
+  return html;
 }
 
 function AssistantMessage({ text }) {
   const raw = String(text || "").replace(/\r/g, "").trim();
   const normalized = raw
-    .replace(/\n?\s+(?=#{1,3}\s+)/g, "\n\n")
-    .replace(/\n?\s+(?=(?:[-*•]|\d+\.)\s+)/g, "\n");
+    .replace(/\s+(#{1,3}\s+)/g, "\n\n$1")
+    .replace(/\s+((?:[-*•]|\d+\.)\s+)/g, "\n$1")
+    .replace(/\n\s+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n");
+
   const blocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
   if (!blocks.length) return null;
 
@@ -272,6 +285,7 @@ function AssistantMessage({ text }) {
     <div className="assistantMessage">
       {blocks.map((block, index) => {
         const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+
         if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
           const content = lines[0].replace(/^#{1,3}\s+/, "");
           return <h4 key={index} dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(content) }} />;
@@ -292,7 +306,11 @@ function AssistantMessage({ text }) {
           );
         }
 
-        return <p key={index} dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(lines.join(" ")) }} />;
+        return (
+          <p key={index} dangerouslySetInnerHTML={{
+            __html: formatInlineMarkdown(lines.join(" "))
+          }} />
+        );
       })}
     </div>
   );
