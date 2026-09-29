@@ -1507,11 +1507,9 @@ export default function App() {
                       </button>
                     )}
 
-                    {message.meta?.network && (
+                    {message.meta?.status === "error" && (
                       <small className="meta">
-                        {message.meta.status}
-                        {" · "}
-                        {message.meta.network}
+                        Something went wrong. Please try again.
                       </small>
                     )}
 
