@@ -253,14 +253,19 @@ function parseResearchResults(text) {
 
 function formatInlineMarkdown(value) {
   return String(value || "")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/__(.+?)__/g, "<strong>$1</strong>")
-    .replace(/\*([^*\n]+?)\*/g, "<em>$1</em>");
+    .replace(/\*([^*\n]+?)\*/g, "<em>$1</em>")
+    .replace(/\`([^\`]+?)\`/g, "<code>$1</code>");
 }
 
 function AssistantMessage({ text }) {
   const raw = String(text || "").replace(/\r/g, "").trim();
-  const blocks = raw.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const normalized = raw
+    .replace(/\n?\s+(?=#{1,3}\s+)/g, "\n\n")
+    .replace(/\n?\s+(?=(?:[-*•]|\d+\.)\s+)/g, "\n");
+  const blocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
   if (!blocks.length) return null;
 
   return (
