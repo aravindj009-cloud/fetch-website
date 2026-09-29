@@ -230,6 +230,9 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const [task, setTask] = useState(null);
   const [instamartDemo, setInstamartDemo] = useState(null);
+  const [instamartLive, setInstamartLive] = useState(null);
+  const [selectedSpins, setSelectedSpins] = useState({});
+  const [selectedPayment, setSelectedPayment] = useState("");
 
   const activeWatchRef = useRef(null);
   const lastOrderMessageRef = useRef(new Map());
@@ -378,7 +381,10 @@ export default function App() {
       ]);
 
       if (data?.provider?.id === "swiggy_instamart" && data?.instamart_preview) {
-        setInstamartDemo(data.instamart_preview);
+        setInstamartLive(data.instamart_preview);
+        setSelectedSpins({});
+        setSelectedPayment("");
+        setInstamartDemo(null);
       }
 
       const resolvedOrderId =
@@ -416,6 +422,94 @@ export default function App() {
       setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
+    }
+  }
+
+  async function runInstamartLiveAction(action) {
+    if (!instamartLive || busy) return;
+
+    setBusy(true);
+
+    try {
+      let payload;
+
+      if (action === "selection") {
+        const options = Array.isArray(instamartLive.productOptions)
+          ? instamartLive.productOptions
+          : [];
+
+        const items = Object.values(selectedSpins)
+          .map((spinId) => {
+            const option = options.find((item) => item.spinId === spinId);
+            return option ? { spinId: option.spinId, quantity: option.quantity } : null;
+          })
+          .filter(Boolean);
+
+        if (!items.length) throw new Error("Choose at least one product before building the cart.");
+
+        payload = {
+          action: "selection",
+          conversationId: conversationRef.current,
+          addressId: instamartLive.addressId,
+          items
+        };
+      } else if (action === "checkout") {
+        if (!selectedPayment) throw new Error("Choose a payment method before checkout.");
+
+        payload = {
+          action: "checkout",
+          conversationId: conversationRef.current,
+          addressId: instamartLive.addressId,
+          paymentMethod: selectedPayment,
+          confirmed: true
+        };
+      } else {
+        throw new Error("Unknown Instamart action.");
+      }
+
+      const response = await fetch("/api/fetch/swiggy/execute.mjs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await readApiJson(response);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || data?.error?.message || data?.error || "Instamart action failed");
+      }
+
+      setInstamartLive((current) => ({ ...(current || {}), ...data }));
+
+      if (action === "selection") {
+        setTask((current) => ({ ...(current || {}), stage: "cart ready for approval", status: data.status, network: "Instamart" }));
+        setMessages((current) => [...current, {
+          id: makeId(),
+          role: "assistant",
+          text: "Your live Instamart cart is ready. Review the total, delivery address and payment method before I place it.",
+          meta: { status: data.status, network: "Instamart" }
+        }]);
+      } else {
+        const orderId = data?.data?.orderId || data?.orderId || data?.order?.orderId || null;
+        setTask((current) => ({ ...(current || {}), stage: "order placed", status: data.status, network: "Instamart", orderId }));
+        setMessages((current) => [...current, {
+          id: makeId(),
+          role: "assistant",
+          text: data?.message || "Instamart order placed successfully.",
+          meta: { status: data.status, network: "Instamart" }
+        }]);
+        if (orderId) {
+          setInstamartLive((current) => ({ ...(current || {}), orderId }));
+        }
+      }
+    } catch (error) {
+      setMessages((current) => [...current, {
+        id: makeId(),
+        role: "assistant",
+        text: error?.message || "The Instamart action failed.",
+        meta: { status: "error", network: "Instamart" }
+      }]);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -712,6 +806,9 @@ export default function App() {
 
     setTask(null);
     setInstamartDemo(null);
+    setInstamartLive(null);
+    setSelectedSpins({});
+    setSelectedPayment("");
     setInput("");
 
     setTimeout(() => {
@@ -727,6 +824,16 @@ export default function App() {
     <div className="app">
 
       <style>{`
+        .instamartLiveCard { margin-top:14px; padding:14px; border:1px solid #e6e6e6; border-radius:14px; background:#fff; }
+        .liveBadge { font-size:9px; font-weight:800; letter-spacing:.08em; opacity:.55; margin-bottom:10px; }
+        .liveProduct { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid #eee; }
+        .liveProduct input { margin-top:4px; }
+        .liveProductInfo { flex:1; display:flex; flex-direction:column; gap:3px; font-size:12px; }
+        .liveProductInfo small { opacity:.55; }
+        .paymentBox { margin-top:12px; padding:10px; border-radius:10px; background:#f7f7f7; }
+        .paymentBox label { display:flex; gap:8px; align-items:center; font-size:12px; padding:7px 0; }
+        .liveAddress { font-size:11px; opacity:.65; margin-bottom:8px; }
+        .liveCartTotal { display:flex; justify-content:space-between; padding:12px 0 2px; font-size:14px; font-weight:800; }
         .instamartDemoCard {
           margin-top: 14px;
           padding: 14px;
@@ -842,6 +949,92 @@ export default function App() {
                       <ResearchResults text={message.text} />
                     ) : (
                       message.text
+                    )}
+
+                    {message.id === messages[messages.length - 1]?.id && instamartLive && (
+                      <div className="instamartLiveCard">
+                        <div className="liveBadge">LIVE INSTAMART · FETCH EXECUTION</div>
+
+                        {instamartLive.address && (
+                          <div className="liveAddress">
+                            Deliver to: {instamartLive.address?.label || instamartLive.address?.address || "Saved Swiggy address"}
+                          </div>
+                        )}
+
+                        {instamartLive.productOptions?.length ? (
+                          <>
+                            {Object.entries(
+                              instamartLive.productOptions.reduce((groups, item) => {
+                                const key = item.requested || item.name;
+                                groups[key] = groups[key] || [];
+                                groups[key].push(item);
+                                return groups;
+                              }, {})
+                            ).map(([requested, options]) => (
+                              <div key={requested}>
+                                <div style={{fontSize:"11px",fontWeight:800,margin:"10px 0 4px"}}>{requested}</div>
+                                {options.map((option) => (
+                                  <label className="liveProduct" key={option.spinId}>
+                                    <input
+                                      type="radio"
+                                      name={`fetch-product-${requested}`}
+                                      checked={selectedSpins[requested] === option.spinId}
+                                      onChange={() => setSelectedSpins((current) => ({ ...current, [requested]: option.spinId }))}
+                                    />
+                                    <span className="liveProductInfo">
+                                      <strong>{option.name}</strong>
+                                      <small>{option.pack || "Variant"} · ₹{option.price ?? "—"} · {option.inStock === false ? "Out of stock" : "Available"}</small>
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              className="approvalButton"
+                              onClick={() => runInstamartLiveAction("selection")}
+                              disabled={busy}
+                            >
+                              Build live cart
+                            </button>
+                          </>
+                        ) : instamartLive.cart ? (
+                          <>
+                            <div style={{fontSize:"12px",fontWeight:800}}>Live cart</div>
+                            <pre style={{fontSize:"10px",whiteSpace:"pre-wrap",opacity:.65,maxHeight:160,overflow:"auto"}}>
+                              {JSON.stringify(instamartLive.cart, null, 2)}
+                            </pre>
+                            <div className="liveCartTotal">
+                              <span>Total</span>
+                              <span>₹{instamartLive.cart?.data?.pricing?.to_pay ?? instamartLive.cart?.pricing?.to_pay ?? instamartLive.cart?.to_pay ?? "—"}</span>
+                            </div>
+
+                            <div className="paymentBox">
+                              <strong style={{fontSize:"11px"}}>Payment method</strong>
+                              {(instamartLive.paymentOptions?.availablePaymentMethods || instamartLive.paymentOptions?.data?.availablePaymentMethods || ["COD"]).map((method) => {
+                                const value = typeof method === "string" ? method : method?.id || method?.groupName;
+                                return (
+                                  <label key={value}>
+                                    <input type="radio" name="fetch-payment" value={value} checked={selectedPayment === value} onChange={() => setSelectedPayment(value)} />
+                                    <span>{typeof method === "string" ? method : method?.displayName || value}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+
+                            <button
+                              type="button"
+                              className="approvalButton"
+                              onClick={() => runInstamartLiveAction("checkout")}
+                              disabled={busy || !selectedPayment}
+                            >
+                              Confirm & place Instamart order
+                            </button>
+                          </>
+                        ) : (
+                          <div style={{fontSize:"12px",opacity:.65}}>Preparing live Instamart results…</div>
+                        )}
+                      </div>
                     )}
 
                     {message.id === messages[messages.length - 1]?.id && instamartDemo && (
