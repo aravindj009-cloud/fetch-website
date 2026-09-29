@@ -17,11 +17,20 @@ export default async function handler(req, res) {
     if (!conversationId) return json(res, 400, { success: false, error: "conversationId is required" });
 
     const token = await getSwiggyToken(conversationId);
-    if (!token) return json(res, 401, { success: false, status: "connection_required", error: "SWIGGY_CONNECTION_REQUIRED" });
+    if (!token) return json(res, 401, {
+      success: false,
+      status: "connection_required",
+      error: "SWIGGY_CONNECTION_REQUIRED",
+      message: "Your Swiggy connection has expired or is missing. Reconnect Swiggy to Fetch to continue."
+    });
 
     const action = clean(body.action) || "prepare";
 
-    if (action === "prepare") return json(res, 200, await prepareInstamartOrder({ accessToken: token.access_token, items: Array.isArray(body.items) ? body.items : [], addressId: clean(body.addressId) }));
+    if (action === "prepare") return json(res, 200, await prepareInstamartOrder({
+      accessToken: token.access_token,
+      items: Array.isArray(body.items) ? body.items : [],
+      addressId: clean(body.addressId)
+    }));
     if (action === "selection") return json(res, 200, await applyInstamartSelection({ accessToken: token.access_token, addressId: clean(body.addressId), items: Array.isArray(body.items) ? body.items : [] }));
     if (action === "checkout") return json(res, 200, await confirmInstamartCheckout({ accessToken: token.access_token, addressId: clean(body.addressId), paymentMethod: clean(body.paymentMethod) || undefined, intentApp: clean(body.intentApp) || undefined, generateUPIQR: body.generateUPIQR === true, confirmed: body.confirmed === true }));
     if (action === "track") return json(res, 200, await trackInstamartOrder({ accessToken: token.access_token, orderId: clean(body.orderId) }));
