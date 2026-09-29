@@ -3,10 +3,10 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 const starters = [
-  "Get me 2 KitKats and milk",
-  "Book me an Uber to Technopark tomorrow at 9 AM",
-  "Find me a good restaurant for tonight",
-  "Find the latest news about AI agents"
+  "Get me a cab to Technopark",
+  "Book me an Uber to the airport",
+  "Get me a Rapido to Kowdiar",
+  "What can you help me with?"
 ];
 
 const makeId = () =>
@@ -337,10 +337,10 @@ export default function App() {
         !/\b(news|restaurant|weather|remember|calendar|book a flight|research|explain)\b/i.test(text);
 
       const isMobilityRequest =
-        /\b(uber|cab|taxi|ride|uberx|uber auto|airport ride)\b/i.test(text);
+        /\b(uber|rapido|cab|taxi|ride|bike taxi|auto|uberx|uber auto|airport ride)\b/i.test(text);
 
       const isProviderCandidate =
-        /\b(instamart|swiggy|grocery|groceries|milk|bread|eggs|rice|snacks|biscuits|kitkat|munch|water|cab|taxi|ride|uber)\b/i.test(text);
+        /\b(instamart|swiggy|grocery|groceries|milk|bread|eggs|rice|snacks|biscuits|kitkat|munch|water|cab|taxi|ride|uber|rapido|bike taxi|auto)\b/i.test(text);
 
       let latitude = null;
       let longitude = null;
