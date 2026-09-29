@@ -229,6 +229,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [task, setTask] = useState(null);
+  const [instamartDemo, setInstamartDemo] = useState(null);
 
   const activeWatchRef = useRef(null);
   const lastOrderMessageRef = useRef(new Map());
@@ -303,7 +304,8 @@ export default function App() {
             conversationId: conversationRef.current,
             channel: "web",
             latitude,
-            longitude
+            longitude,
+            suppliedContext: { local_demo: true }
           })
         }
       );
@@ -371,6 +373,10 @@ export default function App() {
         }
       ]);
 
+      if (data?.provider?.id === "swiggy_instamart" && data?.instamart_preview) {
+        setInstamartDemo(data.instamart_preview);
+      }
+
       const resolvedOrderId =
         data.orderId || data.order_id || null;
 
@@ -406,6 +412,73 @@ export default function App() {
       setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
+    }
+  }
+
+  async function runInstamartDemoAction(action) {
+    if (!instamartDemo || busy) return;
+
+    setBusy(true);
+    setTask((current) => ({
+      ...(current || {}),
+      stage: action === "checkout" ? "placing demo order" : "building demo cart",
+      status: "working",
+      network: "Instamart · local demo"
+    }));
+
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify({
+          text: task?.text || "Get me groceries",
+          conversationId: conversationRef.current,
+          channel: "web",
+          demoAction: action,
+          suppliedContext: { local_demo: true }
+        })
+      });
+
+      const data = await readApiJson(response);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || data?.error || "Demo action failed");
+      }
+
+      if (data.instamart_preview) {
+        setInstamartDemo(data.instamart_preview);
+      }
+
+      setTask((current) => ({
+        ...(current || {}),
+        stage: action === "checkout" ? "demo order placed" : "cart ready for approval",
+        status: data.status,
+        network: "Instamart · local demo"
+      }));
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: "assistant",
+          text: data.message || "The demo step is ready.",
+          meta: { status: data.status, network: "Instamart · local demo" }
+        }
+      ]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: "assistant",
+          text: error?.message || "The demo step failed.",
+          meta: { status: "error", network: "Instamart · local demo" }
+        }
+      ]);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -634,6 +707,7 @@ export default function App() {
     ]);
 
     setTask(null);
+    setInstamartDemo(null);
     setInput("");
 
     setTimeout(() => {
@@ -649,6 +723,21 @@ export default function App() {
     <div className="app">
 
       <style>{`
+        .instamartDemoCard {
+          margin-top: 14px;
+          padding: 14px;
+          border: 1px solid #e8e8e8;
+          border-radius: 14px;
+          background: #fafafa;
+        }
+        .demoBadge { font-size: 9px; font-weight: 800; letter-spacing: .08em; margin-bottom: 8px; opacity: .55; }
+        .demoAddress { font-size: 11px; margin-bottom: 10px; opacity: .65; }
+        .demoProduct, .demoTotal { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid #ededed; font-size:12px; }
+        .demoProduct span { display:flex; flex-direction:column; gap:2px; }
+        .demoProduct small { opacity:.55; }
+        .demoTotal.grand { border-bottom:0; padding-top:12px; font-size:14px; }
+        .demoTracking { display:flex; flex-direction:column; gap:4px; margin-top:12px; padding:10px; border-radius:10px; background:#fff; font-size:11px; }
+        .demoTracking span { opacity:.65; }
         .approvalButton {
           margin-top: 12px;
           width: 100%;
@@ -749,6 +838,56 @@ export default function App() {
                       <ResearchResults text={message.text} />
                     ) : (
                       message.text
+                    )}
+
+                    {message.id === messages[messages.length - 1]?.id && instamartDemo && (
+                      <div className="instamartDemoCard">
+                        <div className="demoBadge">LOCAL SWIGGY DEMO · NO REAL ORDER</div>
+                        <div className="demoAddress">{instamartDemo.address}</div>
+                        {instamartDemo.products?.map((item) => (
+                          <div className="demoProduct" key={item.requested}>
+                            <span>
+                              <strong>{item.quantity} × {item.name}</strong>
+                              <small>{item.pack} · ₹{item.price}</small>
+                            </span>
+                            <b>₹{item.line_total}</b>
+                          </div>
+                        ))}
+                        <div className="demoTotal">
+                          <span>Items</span><b>₹{instamartDemo.subtotal}</b>
+                        </div>
+                        <div className="demoTotal">
+                          <span>Delivery</span><b>₹{instamartDemo.delivery_fee}</b>
+                        </div>
+                        <div className="demoTotal grand">
+                          <span>Total</span><b>₹{instamartDemo.total}</b>
+                        </div>
+                        {instamartDemo.order_id ? (
+                          <div className="demoTracking">
+                            <strong>Demo order {instamartDemo.order_id}</strong>
+                            <span>{instamartDemo.tracking}</span>
+                          </div>
+                        ) : instamartDemo.subtotal != null ? (
+                          <button
+                            type="button"
+                            className="approvalButton"
+                            onClick={() =>
+                              runInstamartDemoAction(
+                                task?.stage === "cart ready for approval" ||
+                                task?.status === "awaiting_checkout_confirmation"
+                                  ? "checkout"
+                                  : "cart"
+                              )
+                            }
+                            disabled={busy}
+                          >
+                            {task?.stage === "cart ready for approval" ||
+                            task?.status === "awaiting_checkout_confirmation"
+                              ? "Place demo order"
+                              : "Build cart"}
+                          </button>
+                        ) : null}
+                      </div>
                     )}
 
                     {message.meta?.status === "awaiting_customer_price_confirmation" && (
