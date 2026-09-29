@@ -21,7 +21,7 @@ export default async function handler(req, res) {
 
     const action = clean(body.action) || "prepare";
 
-    if (action === "prepare") return json(res, 200, await prepareInstamartOrder({ accessToken: token.access_token, items: Array.isArray(body.items) ? body.items : [] }));
+    if (action === "prepare") return json(res, 200, await prepareInstamartOrder({ accessToken: token.access_token, items: Array.isArray(body.items) ? body.items : [], addressId: clean(body.addressId) }));
     if (action === "selection") return json(res, 200, await applyInstamartSelection({ accessToken: token.access_token, addressId: clean(body.addressId), items: Array.isArray(body.items) ? body.items : [] }));
     if (action === "checkout") return json(res, 200, await confirmInstamartCheckout({ accessToken: token.access_token, addressId: clean(body.addressId), paymentMethod: clean(body.paymentMethod) || undefined, intentApp: clean(body.intentApp) || undefined, generateUPIQR: body.generateUPIQR === true, confirmed: body.confirmed === true }));
     if (action === "track") return json(res, 200, await trackInstamartOrder({ accessToken: token.access_token, orderId: clean(body.orderId) }));
