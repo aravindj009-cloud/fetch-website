@@ -381,7 +381,7 @@ export default function App() {
       ]);
 
       if (data?.provider?.id === "swiggy_instamart" && data?.instamart_preview) {
-        setInstamartLive(data.instamart_preview);
+        setInstamartLive({ ...data.instamart_preview, requestedItems: data.instamart_preview.requestedItems || data.instamart_preview.searches?.map((s) => ({ item: s.requested, quantity: s.quantity })) || [] });
         setSelectedSpins({});
         setSelectedPayment("");
         setInstamartDemo(null);
@@ -423,6 +423,35 @@ export default function App() {
         inputRef.current?.focus();
       }, 0);
     }
+  }
+
+  async function chooseInstamartAddress(addressId) {
+    if (!addressId || busy) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/fetch/swiggy/execute.mjs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          action: "prepare",
+          conversationId: conversationRef.current,
+          addressId,
+          items: (instamartLive?.requestedItems || []).map((item) => ({
+            item: item.item || item.name,
+            quantity: item.quantity || 1
+          }))
+        })
+      });
+      const data = await readApiJson(response);
+      if (!response.ok || !data?.success) throw new Error(data?.message || data?.error || "Could not prepare Instamart.");
+      setInstamartLive(data);
+    } catch (error) {
+      setMessages((current) => [...current, {
+        id: makeId(), role: "assistant",
+        text: error?.message || "Could not select that address.",
+        meta: { status: "error", network: "Instamart" }
+      }]);
+    } finally { setBusy(false); }
   }
 
   async function runInstamartLiveAction(action) {
@@ -961,7 +990,28 @@ export default function App() {
                           </div>
                         )}
 
-                        {instamartLive.productOptions?.length ? (
+                        {instamartLive.status === "address_selection_required" ? (
+                          <>
+                            <div style={{fontSize:"12px",fontWeight:800,marginBottom:"8px"}}>Where should I deliver it?</div>
+                            {(instamartLive.addresses || []).map((address) => {
+                              const id = address?.id || address?.addressId;
+                              return (
+                                <button
+                                  type="button"
+                                  className="approvalButton"
+                                  key={id}
+                                  onClick={() => chooseInstamartAddress(id)}
+                                  disabled={busy}
+                                  style={{textAlign:"left",background:"#f4f4f4",color:"#111"}}
+                                >
+                                  <strong>{address?.label || address?.name || "Saved address"}</strong>
+                                  <br />
+                                  <span style={{fontWeight:400,opacity:.65}}>{address?.address || address?.formattedAddress || address?.addressLine || ""}</span>
+                                </button>
+                              );
+                            })}
+                          </>
+                        ) :                         {instamartLive.productOptions?.length ? (
                           <>
                             {Object.entries(
                               instamartLive.productOptions.reduce((groups, item) => {
