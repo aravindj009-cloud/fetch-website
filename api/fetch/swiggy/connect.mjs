@@ -1,4 +1,4 @@
-const SWIGGY_BASE = "https://mcp.swiggy.com";
+// Production deployment marker: Swiggy OAuth connect flow is live-ready.\nconst SWIGGY_BASE = "https://mcp.swiggy.com";
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || "https://skfxzagxlxputwpwxwbe.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY;
 
