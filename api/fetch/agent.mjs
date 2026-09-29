@@ -659,15 +659,22 @@ export default async function handler(req, res) {
       }
 
       const connectionRequired = provider.connection_status !== "connected";
+      const connectorPending = ["connector_pending", "not_enabled"].includes(provider.connection_status);
       const connectUrl = connectionRequired && provider.id === "swiggy_instamart"
         ? "/api/fetch/swiggy/connect.mjs?conversationId=" + encodeURIComponent(conversationId)
         : null;
+
+      const providerMessage = connectorPending
+        ? `I can route this request through ${provider.name}, but that live connector is not connected to Fetch yet. I haven’t placed or attempted any order.`
+        : connectionRequired && connectUrl
+          ? `I found ${provider.name}. Connect it to Fetch and I can continue with the order.`
+          : clean(providerExecution.message) || "Fetch selected " + provider.name + " for this request.";
 
       return json(res, 200, {
         success: true,
         status: universal.status || "provider_connection_required",
         workflow_id: universal.workflow_id || null,
-        message: connectionRequired && connectUrl ? "I found " + provider.name + ". Connect it to Fetch and I can continue with the order." : clean(providerExecution.message) || "Fetch selected " + provider.name + " for this request.",
+        message: providerMessage,
         fetch: {
           intent: universal?.fetch?.decisions?.[0]?.intent || null,
           confidence: universal?.fetch?.decisions?.[0]?.intent?.confidence ?? null,
