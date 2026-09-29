@@ -1,5 +1,4 @@
-// Production deployment marker: Swiggy OAuth connect flow is live-ready.\nconst SWIGGY_BASE = "https://mcp.swiggy.com";
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || "https://skfxzagxlxputwpwxwbe.supabase.co";
+// Production deployment marker: Swiggy OAuth connect flow is live-ready.\nconst SUPABASE_URL = process.env.VITE_SUPABASE_URL || "https://skfxzagxlxputwpwxwbe.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY;
 
 const clean = (value) => String(value ?? "").trim();
@@ -77,7 +76,7 @@ export async function GET(request) {
     const state = randomBase64Url(32);
     const uri = redirectUri(request);
 
-    const registration = await fetch(SWIGGY_BASE + "/auth/register", {
+    const registration = await fetch("https://mcp.swiggy.com/auth/register", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -124,7 +123,7 @@ export async function GET(request) {
       })
     });
 
-    const authorizeUrl = new URL(SWIGGY_BASE + "/auth/authorize");
+    const authorizeUrl = new URL("https://mcp.swiggy.com/auth/authorize");
     authorizeUrl.searchParams.set("response_type", "code");
     authorizeUrl.searchParams.set("client_id", registrationData.client_id);
     authorizeUrl.searchParams.set("redirect_uri", uri);
