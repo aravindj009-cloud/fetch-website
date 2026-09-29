@@ -460,14 +460,43 @@ export default function App() {
                               ? "conversation"
                               : "coordinating";
 
-      setTask({
-        text,
-        stage,
-        status: data.status,
-        network: route,
-        workflowId: data.workflow_id,
-        orderId: data.orderId || data.order_id || null
-      });
+      const isExecution =
+        !isConversation &&
+        !!(
+          data?.provider?.id ||
+          data?.provider?.connect_url ||
+          data?.provider?.action_url ||
+          data?.execution?.side_effect ||
+          data?.execution?.confirmation_required ||
+          [
+            "provider_ready",
+            "provider_connection_required",
+            "needs_clarification",
+            "awaiting_location",
+            "partner_offered",
+            "awaiting_customer_price_confirmation",
+            "finding_shopper",
+            "shopper_assigned",
+            "shopping",
+            "picked_up",
+            "out_for_delivery",
+            "delivered",
+            "order_placed"
+          ].includes(data?.status)
+        );
+
+      if (isExecution) {
+        setTask({
+          text,
+          stage,
+          status: data.status,
+          network: route,
+          workflowId: data.workflow_id,
+          orderId: data.orderId || data.order_id || null
+        });
+      } else {
+        setTask(null);
+      }
 
       setMessages((current) => [
         ...current,
