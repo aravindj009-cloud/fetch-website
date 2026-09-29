@@ -74,6 +74,56 @@ function isExecutionRequest(universal) {
   ].includes(domain) || !!universal?.provider?.id;
 }
 
+function buildActiveTask({
+  text,
+  universal,
+  status,
+  message,
+  previousTask = null
+} = {}) {
+  const decision = universal?.fetch?.decisions?.[0] || {};
+  const intent = decision?.intent || null;
+  const entities = decision?.entities || {};
+  const plan = decision?.plan || null;
+  const domain = clean(intent?.domain) || "general_agent";
+  const previousDomain = clean(previousTask?.domain);
+
+  // Preserve the larger objective for natural follow-ups, but reset it when
+  // the user clearly switches into a different executable domain.
+  const keepObjective =
+    previousTask?.objective &&
+    (domain === "general_agent" || !previousDomain || previousDomain === domain);
+
+  return {
+    id: clean(universal?.workflow_id) || null,
+    objective: keepObjective ? previousTask.objective : clean(text),
+    latestText: clean(text),
+    text: clean(text),
+    domain,
+    intent,
+    entities,
+    plan,
+    stage: domain === "general_agent" ? "conversation" : clean(status || universal?.status || "working"),
+    status: clean(status || universal?.status || "working"),
+    network:
+      universal?.provider?.category ||
+      universal?.atc?.network ||
+      previousTask?.network ||
+      "digital",
+    workflowId: clean(universal?.workflow_id) || null,
+    orderId: clean(universal?.order_id || universal?.orderId || previousTask?.orderId) || null,
+    provider:
+      universal?.provider
+        ? {
+            id: universal.provider.id || null,
+            name: universal.provider.name || null
+          }
+        : previousTask?.provider || null,
+    lastResponse: clean(message),
+    updatedAt: new Date().toISOString()
+  };
+}
+
 async function supabaseRequest(path, options = {}) {
   if (!SUPABASE_KEY) {
     throw new Error("SUPABASE_SECRET_KEY is missing");
@@ -996,15 +1046,26 @@ export default async function handler(req, res) {
         activeTask
       });
 
+      const responseMessage =
+        naturalAnswer ||
+        clean(execution?.message) ||
+        clean(decision?.decision?.reason) ||
+        "I understand the request.";
+
+      const activeTaskState = buildActiveTask({
+        text,
+        universal,
+        status: universal?.status || "resource_matched",
+        message: responseMessage,
+        previousTask: activeTask
+      });
+
       return json(res, 200, {
         success: true,
-        message:
-          naturalAnswer ||
-          clean(execution?.message) ||
-          clean(decision?.decision?.reason) ||
-          "I understand the request.",
+        message: responseMessage,
         status: universal?.status || "resource_matched",
         workflow_id: universal?.workflow_id || null,
+        active_task: activeTaskState,
         fetch: {
           intent: decision?.intent || null,
           confidence: decision?.intent?.confidence ?? null,
