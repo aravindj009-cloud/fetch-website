@@ -514,6 +514,30 @@ export default function App() {
     } finally { setBusy(false); }
   }
 
+  async function refreshInstamartTracking(orderId) {
+    if (!orderId) return;
+    try {
+      const response = await fetch("/api/fetch/swiggy/execute.mjs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          action: "track",
+          conversationId: conversationRef.current,
+          orderId
+        })
+      });
+      const data = await readApiJson(response);
+      if (response.ok && data?.success) {
+        setInstamartLive((current) => ({
+          ...(current || {}),
+          tracking: data?.data || data?.text || data
+        }));
+      }
+    } catch (error) {
+      console.warn("FETCH INSTAMART TRACKING ERROR", error);
+    }
+  }
+
   async function runInstamartLiveAction(action) {
     if (!instamartLive || busy) return;
 
@@ -589,6 +613,7 @@ export default function App() {
         }]);
         if (orderId) {
           setInstamartLive((current) => ({ ...(current || {}), orderId }));
+          void refreshInstamartTracking(orderId);
         }
       }
     } catch (error) {
