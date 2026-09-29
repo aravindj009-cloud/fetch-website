@@ -57,28 +57,21 @@ function validCoordinates(latitude, longitude) {
   );
 }
 
-function isPhysicalRequest(text) {
-  const value = clean(text).toLowerCase();
+function isActionConfirmation(text) {
+  return /^(yes|yeah|yep|sure|okay|ok|go ahead|do it|place it|place the order|confirm|confirmed|proceed|please do|that's fine|that works)$/i
+    .test(clean(text).replace(/[.!]+$/, ""));
+}
+
+function isExecutionRequest(universal) {
+  const domain = clean(universal?.fetch?.decisions?.[0]?.intent?.domain);
   return [
-    "buy ",
-    "get me",
-    "bring me",
-    "deliver",
-    "order",
-    "grocer",
-    "kitkat",
-    "kit kat",
-    "milk",
-    "bread",
-    "eggs",
-    "rice",
-    "snacks",
-    "biscuit",
-    "biscuits",
-    "medicine",
-    "water",
-    "fetch me"
-  ].some((term) => value.includes(term));
+    "physical_commerce",
+    "mobility",
+    "restaurant",
+    "travel",
+    "communications",
+    "productivity"
+  ].includes(domain) || !!universal?.provider?.id;
 }
 
 async function supabaseRequest(path, options = {}) {
@@ -664,6 +657,26 @@ export default async function handler(req, res) {
 
     const text = clean(body.text);
     const resolvedConversationId = conversationId || `web:${Date.now()}`;
+    const activeTask = body.activeTask && typeof body.activeTask === "object"
+      ? body.activeTask
+      : null;
+
+    if (
+      isActionConfirmation(text) &&
+      activeTask?.status === "awaiting_customer_price_confirmation" &&
+      activeTask?.orderId
+    ) {
+      const approval = await approvePhysicalOrder({
+        orderId: clean(activeTask.orderId),
+        conversationId: resolvedConversationId
+      });
+
+      return json(
+        res,
+        approval.success ? 200 : (approval.status === "forbidden" ? 403 : 400),
+        approval
+      );
+    }
 
     if (!text) {
       return json(res, 400, {
@@ -965,12 +978,13 @@ export default async function handler(req, res) {
       });
     }
 
-    if (!isPhysicalRequest(text)) {
+    if (!isExecutionRequest(universal)) {
       const decision = universal?.fetch?.decisions?.[0] || null;
       const execution = universal?.execution || null;
       const naturalAnswer = await answerFetchConversation({
         text,
-        history: Array.isArray(body.history) ? body.history : []
+        history: Array.isArray(body.history) ? body.history : [],
+        activeTask
       });
 
       return json(res, 200, {
