@@ -784,13 +784,10 @@ export default async function handler(req, res) {
     if (!isPhysicalRequest(text)) {
       const decision = universal?.fetch?.decisions?.[0] || null;
       const execution = universal?.execution || null;
-      const naturalAnswer =
-        decision?.intent?.domain === "general_agent"
-          ? await answerFetchConversation({
-              text,
-              history: Array.isArray(body.history) ? body.history : []
-            })
-          : null;
+      const naturalAnswer = await answerFetchConversation({
+        text,
+        history: Array.isArray(body.history) ? body.history : []
+      });
 
       return json(res, 200, {
         success: true,
