@@ -54,11 +54,19 @@ async function db(path, options = {}) {
 }
 
 function redirectUri(request) {
+  // Production must use the exact public callback that Swiggy allowlists.
+  // Do not register a generated *.vercel.app deployment URL.
+  const requestUrl = new URL(request.url);
+  const host = requestUrl.hostname.toLowerCase();
+
+  if (host === "tryfetch.in" || host === "www.tryfetch.in" || process.env.VERCEL_ENV === "production") {
+    return "https://tryfetch.in/api/fetch/swiggy/callback.mjs";
+  }
+
   const configured = clean(process.env.SWIGGY_REDIRECT_URI);
   if (configured) return configured;
 
-  const url = new URL(request.url);
-  return url.origin + "/api/fetch/swiggy/callback.mjs";
+  return requestUrl.origin + "/api/fetch/swiggy/callback.mjs";
 }
 
 export async function GET(request) {
