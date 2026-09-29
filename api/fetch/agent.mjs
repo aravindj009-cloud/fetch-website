@@ -764,7 +764,9 @@ export default async function handler(req, res) {
           transport: provider.transport,
           connection_status: provider.connection_status,
           web_url: provider.web_url,
-          connect_url: connectUrl
+          connect_url: connectUrl,
+          action_url: provider.id === "rapido" ? provider.web_url : null,
+          action_label: provider.id === "rapido" ? "Open Rapido" : null
         },
         execution: {
           success: !!providerExecution.success,
