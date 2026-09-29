@@ -59,12 +59,14 @@ function redirectUri(request) {
   const requestUrl = new URL(request.url);
   const host = requestUrl.hostname.toLowerCase();
 
-  if (host === "tryfetch.in" || host === "www.tryfetch.in" || process.env.VERCEL_ENV === "production") {
-    return "https://tryfetch.in/api/fetch/swiggy/callback.mjs";
-  }
-
+  // Swiggy requires an exact redirect URI match. The Builders Club
+  // application currently allowlists the Vercel callback below.
   const configured = clean(process.env.SWIGGY_REDIRECT_URI);
   if (configured) return configured;
+
+  if (process.env.VERCEL_ENV === "production" || host === "tryfetch.in" || host === "www.tryfetch.in") {
+    return "https://fetch-website-tan.vercel.app/api/fetch/swiggy/callback.mjs";
+  }
 
   return requestUrl.origin + "/api/fetch/swiggy/callback.mjs";
 }
