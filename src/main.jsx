@@ -68,6 +68,31 @@ function getHost(url) {
   }
 }
 
+function getInstamartCartData(cart) {
+  return cart?.data?.data || cart?.data || cart || {};
+}
+
+function getInstamartPricing(cart) {
+  const data = getInstamartCartData(cart);
+  return data?.pricing || data?.bill || {};
+}
+
+function getInstamartPaymentMethods(paymentOptions, cart) {
+  const source =
+    paymentOptions?.data ||
+    paymentOptions ||
+    getInstamartCartData(cart)?.paymentOptions ||
+    {};
+
+  const methods = Array.isArray(source?.allMethods)
+    ? source.allMethods
+    : Array.isArray(source?.availablePaymentMethods)
+      ? source.availablePaymentMethods.map((id) => ({ id, groupName: id, displayName: id }))
+      : [];
+
+  return methods.filter((method) => method && (method.enabled !== false));
+}
+
 function flowNodeClass(task, index) {
   if (!task) return index === 0 ? "active" : "waiting";
 
@@ -261,6 +286,7 @@ export default function App() {
   const [instamartLive, setInstamartLive] = useState(null);
   const [selectedSpins, setSelectedSpins] = useState({});
   const [selectedPayment, setSelectedPayment] = useState("");
+  const [selectedIntentApp, setSelectedIntentApp] = useState("");
 
   const activeWatchRef = useRef(null);
   const lastOrderMessageRef = useRef(new Map());
@@ -417,6 +443,7 @@ export default function App() {
         setInstamartLive({ ...data.instamart_preview, requestedItems: data.instamart_preview.requestedItems || data.instamart_preview.searches?.map((s) => ({ item: s.requested, quantity: s.quantity })) || [] });
         setSelectedSpins({});
         setSelectedPayment("");
+        setSelectedIntentApp("");
         setInstamartDemo(null);
       }
 
@@ -523,6 +550,7 @@ export default function App() {
           conversationId: conversationRef.current,
           addressId: instamartLive.addressId,
           paymentMethod: selectedPayment,
+          ...(selectedPayment === "UPI" && selectedIntentApp ? { intentApp: selectedIntentApp } : {}),
           confirmed: true
         };
       } else {
@@ -1088,22 +1116,71 @@ export default function App() {
                             <div style={{fontSize:"11px",opacity:.65,marginTop:"8px"}}>
                               Live cart retrieved from Swiggy. Review the total and payment method below.
                             </div>
-                            <div className="liveCartTotal">
-                              <span>Total</span>
-                              <span>₹{instamartLive.cart?.data?.pricing?.to_pay ?? instamartLive.cart?.pricing?.to_pay ?? instamartLive.cart?.to_pay ?? "—"}</span>
-                            </div>
+                            {(() => {
+                              const cartData = getInstamartCartData(instamartLive.cart);
+                              const pricing = getInstamartPricing(instamartLive.cart);
+                              const cartItems = Array.isArray(cartData?.items) ? cartData.items : [];
+                              const total = pricing?.to_pay ?? pricing?.billToPay ?? cartData?.to_pay ?? "—";
+                              return (
+                                <>
+                                  {cartItems.length > 0 && (
+                                    <div style={{marginTop:"10px"}}>
+                                      {cartItems.map((item, index) => (
+                                        <div className="demoProduct" key={item.spinId || item.id || item.name || index}>
+                                          <span>
+                                            <strong>{item.quantity || 1} × {item.name || "Instamart item"}</strong>
+                                            <small>₹{item.final_price ?? item.price ?? item.subtotal ?? "—"}</small>
+                                          </span>
+                                          <b>₹{item.total ?? item.subtotal ?? item.final_price ?? "—"}</b>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div className="demoTotal">
+                                    <span>Items</span><b>₹{pricing?.item_total ?? pricing?.subtotal ?? "—"}</b>
+                                  </div>
+                                  <div className="demoTotal">
+                                    <span>Delivery</span><b>₹{pricing?.delivery_charge ?? pricing?.deliveryCharge ?? "—"}</b>
+                                  </div>
+                                  <div className="demoTotal">
+                                    <span>Taxes & charges</span><b>₹{pricing?.taxes_and_charges ?? pricing?.taxes ?? "—"}</b>
+                                  </div>
+                                  <div className="liveCartTotal">
+                                    <span>Total to pay</span>
+                                    <span>₹{total}</span>
+                                  </div>
+                                </>
+                              );
+                            })()}
 
                             <div className="paymentBox">
                               <strong style={{fontSize:"11px"}}>Payment method</strong>
-                              {(instamartLive.paymentOptions?.availablePaymentMethods || instamartLive.paymentOptions?.data?.availablePaymentMethods || ["COD"]).map((method) => {
-                                const value = typeof method === "string" ? method : method?.id || method?.groupName;
-                                return (
-                                  <label key={value}>
-                                    <input type="radio" name="fetch-payment" value={value} checked={selectedPayment === value} onChange={() => setSelectedPayment(value)} />
-                                    <span>{typeof method === "string" ? method : method?.displayName || value}</span>
-                                  </label>
-                                );
-                              })}
+                              {getInstamartPaymentMethods(instamartLive.paymentOptions, instamartLive.cart).length ? (
+                                getInstamartPaymentMethods(instamartLive.paymentOptions, instamartLive.cart).map((method) => {
+                                  const group = method?.groupName || method?.id;
+                                  const isUpi = group === "UPI";
+                                  return (
+                                    <div key={method.id || group} style={{padding:"6px 0"}}>
+                                      <label>
+                                        <input
+                                          type="radio"
+                                          name="fetch-payment"
+                                          value={group}
+                                          checked={selectedPayment === group && (!isUpi || !selectedIntentApp || selectedIntentApp === method.id)}
+                                          onChange={() => {
+                                            setSelectedPayment(group);
+                                            if (isUpi) setSelectedIntentApp(method.id);
+                                            else setSelectedIntentApp("");
+                                          }}
+                                        />
+                                        <span>{method.displayName || group}</span>
+                                      </label>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <div style={{fontSize:"11px",opacity:.6}}>No live payment methods were returned. Refresh the cart before checkout.</div>
+                              )}
                             </div>
 
                             <button
