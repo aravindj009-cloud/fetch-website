@@ -1,6 +1,8 @@
 import { executeUniversalFetchRequest } from "../../lib/fetch-universal-execution.mjs";
 import { atcSafe, atcCreateTaskForOrder, atcSelectPartnerStoreForOrder, atcRecordEvent } from "../../lib/atc.mjs";
 import { offerOrderToPartnerStore } from "../../lib/partner-store.mjs";
+import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
+import { prepareInstamartOrder } from "../../lib/fetch-instamart-execution.mjs";
 
 const SUPABASE_URL =
   process.env.VITE_SUPABASE_URL ||
@@ -467,6 +469,8 @@ export default async function handler(req, res) {
       });
     }
 
+    const swiggyToken = await getSwiggyToken(conversationId);
+
     const universal = await executeUniversalFetchRequest({
       text,
       customerId: clean(body.customerId) || null,
@@ -474,7 +478,7 @@ export default async function handler(req, res) {
       channel: "web",
       activeTaskId: clean(body.activeTaskId) || null,
       suppliedIntent: body.suppliedIntent || null,
-      suppliedContext: body.suppliedContext || {}
+      suppliedContext: { ...(body.suppliedContext || {}), provider_access_token: swiggyToken?.access_token || null }
     });
 
     /*
@@ -619,12 +623,51 @@ export default async function handler(req, res) {
       const provider = universal.provider;
       const providerExecution = universal.execution || {};
 
+      if (
+        provider.id === "swiggy_instamart" &&
+        swiggyToken?.access_token &&
+        body.suppliedContext?.local_demo !== true
+      ) {
+        const entities = universal?.fetch?.decisions?.[0]?.entities || {};
+        const execution = await prepareInstamartOrder({
+          accessToken: swiggyToken.access_token,
+          items: Array.isArray(entities?.items) ? entities.items : []
+        });
+
+        return json(res, 200, {
+          success: true,
+          status: execution.status || "provider_ready",
+          workflow_id: universal.workflow_id || null,
+          message: execution.message || "I found the requested items on Instamart. Review the available products before I build the cart.",
+          fetch: {
+            intent: universal?.fetch?.decisions?.[0]?.intent || null,
+            confidence: universal?.fetch?.decisions?.[0]?.intent?.confidence ?? null,
+            entities,
+            plan: universal?.fetch?.decisions?.[0]?.plan || null
+          },
+          atc: universal.atc || null,
+          provider: {
+            id: provider.id, name: provider.name, company: provider.company, category: provider.category,
+            capabilities: provider.capabilities, transport: provider.transport, connection_status: "connected", web_url: provider.web_url
+          },
+          execution: {
+            success: !!execution.success, status: execution.status || null, message: execution.message || null,
+            execution_type: "swiggy_instamart_mcp", side_effect: false, confirmation_required: execution.status !== "order_placed"
+          },
+          instamart_preview: execution
+        });
+      }
+
+      const connectionRequired = provider.connection_status !== "connected";
+      const connectUrl = connectionRequired && provider.id === "swiggy_instamart"
+        ? "/api/fetch/swiggy/connect.mjs?conversationId=" + encodeURIComponent(conversationId)
+        : null;
+
       return json(res, 200, {
         success: true,
         status: universal.status || "provider_connection_required",
         workflow_id: universal.workflow_id || null,
-        message: clean(providerExecution.message) ||
-          `Fetch selected ${provider.name} for this request.`,
+        message: connectionRequired && connectUrl ? "I found " + provider.name + ". Connect it to Fetch and I can continue with the order." : clean(providerExecution.message) || "Fetch selected " + provider.name + " for this request.",
         fetch: {
           intent: universal?.fetch?.decisions?.[0]?.intent || null,
           confidence: universal?.fetch?.decisions?.[0]?.intent?.confidence ?? null,
@@ -640,7 +683,8 @@ export default async function handler(req, res) {
           capabilities: provider.capabilities,
           transport: provider.transport,
           connection_status: provider.connection_status,
-          web_url: provider.web_url
+          web_url: provider.web_url,
+          connect_url: connectUrl
         },
         execution: {
           success: !!providerExecution.success,
