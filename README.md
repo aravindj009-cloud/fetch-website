@@ -23,3 +23,5 @@ The "Join early access" form currently shows a local success state. Connect it t
 
 
 <!-- Production sync: Fetch provider routing and mobility UX verified on 2026-09-29. -->
+
+<!-- Conversation context deployment sync: 2026-09-29. -->
