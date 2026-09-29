@@ -2,6 +2,7 @@ import { executeUniversalFetchRequest } from "../../lib/fetch-universal-executio
 import { atcSafe, atcCreateTaskForOrder, atcSelectPartnerStoreForOrder, atcRecordEvent } from "../../lib/atc.mjs";
 import { offerOrderToPartnerStore } from "../../lib/partner-store.mjs";
 import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
+import { getUberToken } from "../../lib/uber-oauth.mjs";
 import { prepareInstamartOrder } from "../../lib/fetch-instamart-execution.mjs";
 
 const SUPABASE_URL =
@@ -470,6 +471,7 @@ export default async function handler(req, res) {
     }
 
     const swiggyToken = await getSwiggyToken(conversationId);
+    const uberToken = await getUberToken(conversationId);
 
     const universal = await executeUniversalFetchRequest({
       text,
@@ -478,7 +480,7 @@ export default async function handler(req, res) {
       channel: "web",
       activeTaskId: clean(body.activeTaskId) || null,
       suppliedIntent: body.suppliedIntent || null,
-      suppliedContext: { ...(body.suppliedContext || {}), provider_access_token: swiggyToken?.access_token || null }
+      suppliedContext: { ...(body.suppliedContext || {}), provider_access_token: swiggyToken?.access_token || null, provider_access_tokens: { swiggy_instamart: swiggyToken?.access_token || null, uber: uberToken?.access_token || null }, location: { latitude: body.latitude ?? null, longitude: body.longitude ?? null } }
     });
 
     /*
