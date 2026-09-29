@@ -1,4 +1,4 @@
-import { beginSwiggyAuth } from "../../../../lib/swiggy-oauth-v2.mjs";
+import { beginSwiggyAuth } from "../../../lib/swiggy-oauth-v2.mjs";
 function json(res,status,body){res.status(status);res.setHeader("Content-Type","application/json");res.end(JSON.stringify(body));}
 export default async function handler(req,res){
   if(req.method!=="GET"){return json(res,405,{success:false,error:"Method not allowed"});}
