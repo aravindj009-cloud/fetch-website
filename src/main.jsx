@@ -530,7 +530,7 @@ export default function App() {
         const items = Object.values(selectedSpins)
           .map((spinId) => {
             const option = options.find((item) => item.spinId === spinId);
-            return option ? { spinId: option.spinId, quantity: option.quantity } : null;
+            return option ? { spinId: option.spinId, ...(option.skuId ? { skuId: option.skuId } : {}), quantity: option.quantity } : null;
           })
           .filter(Boolean);
 
@@ -1071,6 +1071,23 @@ export default function App() {
                                 </button>
                               );
                             })}
+                          </>
+                        ) : instamartLive.status === "order_placed" ? (
+                          <>
+                            <div style={{fontSize:"12px",fontWeight:800}}>Order placed ✓</div>
+                            <div style={{fontSize:"11px",opacity:.65,marginTop:"8px"}}>
+                              Fetch completed the Instamart checkout. Order ID:
+                            </div>
+                            <div className="liveCartTotal">
+                              <span>Order</span>
+                              <span>{instamartLive.orderId || instamartLive.data?.orderId || "Confirmed"}</span>
+                            </div>
+                            {instamartLive.tracking && (
+                              <div className="demoTracking">
+                                <strong>Live status</strong>
+                                <span>{instamartLive.tracking?.message || instamartLive.tracking?.status || instamartLive.tracking}</span>
+                              </div>
+                            )}
                           </>
                         ) : instamartLive.productOptions?.length ? (
                           <>
