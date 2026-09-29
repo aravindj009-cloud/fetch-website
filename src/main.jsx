@@ -914,6 +914,15 @@ export default function App() {
   }
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const provider = params.get("uber") === "connected" ? "Uber" : params.get("swiggy") === "connected" ? "Instamart" : null;
+    if (provider) {
+      setConnectionNotice(`${provider} is connected to Fetch. Your next request can use it directly.`);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
     const savedOrderId = localStorage.getItem(ACTIVE_ORDER_KEY);
 
     if (!savedOrderId) return;
