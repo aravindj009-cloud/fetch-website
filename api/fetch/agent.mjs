@@ -477,6 +477,51 @@ export default async function handler(req, res) {
       suppliedContext: body.suppliedContext || {}
     });
 
+    /*
+     * Provider-first ATC:
+     * if Fetch has identified an existing app such as Instamart or Uber,
+     * do not accidentally send the same request into the old local-store
+     * engine. The provider becomes the execution path.
+     */
+    if (universal?.provider?.id) {
+      const provider = universal.provider;
+      const providerExecution = universal.execution || {};
+
+      return json(res, 200, {
+        success: true,
+        status: universal.status || "provider_connection_required",
+        workflow_id: universal.workflow_id || null,
+        message: clean(providerExecution.message) ||
+          `Fetch selected ${provider.name} for this request.`,
+        fetch: {
+          intent: universal?.fetch?.decisions?.[0]?.intent || null,
+          confidence: universal?.fetch?.decisions?.[0]?.intent?.confidence ?? null,
+          entities: universal?.fetch?.decisions?.[0]?.entities || null,
+          plan: universal?.fetch?.decisions?.[0]?.plan || null
+        },
+        atc: universal.atc || null,
+        provider: {
+          id: provider.id,
+          name: provider.name,
+          company: provider.company,
+          category: provider.category,
+          capabilities: provider.capabilities,
+          transport: provider.transport,
+          connection_status: provider.connection_status,
+          web_url: provider.web_url
+        },
+        execution: {
+          success: !!providerExecution.success,
+          status: providerExecution.status || null,
+          message: providerExecution.message || null,
+          execution_type: providerExecution.execution_type || "connected_app",
+          side_effect: false,
+          confirmation_required: !!providerExecution.confirmation_required,
+          quote: null
+        }
+      });
+    }
+
     if (!isPhysicalRequest(text)) {
       const decision = universal?.fetch?.decisions?.[0] || null;
       const execution = universal?.execution || null;
