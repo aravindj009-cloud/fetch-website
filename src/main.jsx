@@ -441,9 +441,7 @@ export default function App() {
         {
           id: makeId(),
           role: "assistant",
-          text:
-            data.message ||
-            "I’m working on that.",
+          text: displayMessage(data.message),
           meta: {
             status: data.status,
             network: route,
@@ -882,7 +880,7 @@ export default function App() {
           orderId
         }));
 
-        const message = String(data.message || "").trim();
+        const message = displayMessage(data.message, "").trim();
         const messageKey = `${status}::${message}`;
         const previousMessageKey =
           lastOrderMessageRef.current.get(orderId);
