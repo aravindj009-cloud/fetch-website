@@ -475,15 +475,20 @@ export default function App() {
           id: makeId(),
           role: "assistant",
           text: displayMessage(data.message),
-          meta: {
-            status: data.status,
-            network: route,
-            connect_url: data?.provider?.connect_url || null,
-            provider_name: data?.provider?.name || null,
-            provider_id: data?.provider?.id || null,
-            action_url: data?.provider?.action_url || null,
-            action_label: data?.provider?.action_label || null
-          }
+          meta:
+            data?.provider?.connect_url ||
+            data?.provider?.action_url ||
+            data?.status === "awaiting_customer_price_confirmation"
+              ? {
+                  status: data.status,
+                  network: route,
+                  connect_url: data?.provider?.connect_url || null,
+                  provider_name: data?.provider?.name || null,
+                  provider_id: data?.provider?.id || null,
+                  action_url: data?.provider?.action_url || null,
+                  action_label: data?.provider?.action_label || null
+                }
+              : null
         }
       ]);
 
