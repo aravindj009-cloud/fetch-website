@@ -300,13 +300,16 @@ export default function App() {
         /\b(buy|get|fetch|bring|pick up|pickup|purchase|deliver|delivery|order|need|source|find)\b/i.test(text) &&
         !/\b(news|restaurant|weather|remember|calendar|book a flight|research|explain)\b/i.test(text);
 
+      const isMobilityRequest =
+        /\b(uber|cab|taxi|ride|uberx|uber auto|airport ride)\b/i.test(text);
+
       const isProviderCandidate =
         /\b(instamart|swiggy|grocery|groceries|milk|bread|eggs|rice|snacks|biscuits|kitkat|munch|water|cab|taxi|ride|uber)\b/i.test(text);
 
       let latitude = null;
       let longitude = null;
 
-      if (isPhysicalRequest && !isProviderCandidate && navigator.geolocation) {
+      if ((isPhysicalRequest && !isProviderCandidate || isMobilityRequest) && navigator.geolocation) {
         const position = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
             resolve,
@@ -403,7 +406,9 @@ export default function App() {
           meta: {
             status: data.status,
             network: route,
-            connect_url: data?.provider?.connect_url || null
+            connect_url: data?.provider?.connect_url || null,
+            provider_name: data?.provider?.name || null,
+            provider_id: data?.provider?.id || null
           }
         }
       ]);
@@ -1173,7 +1178,7 @@ export default function App() {
                         onClick={() => window.location.href = message.meta.connect_url}
                         disabled={busy}
                       >
-                        Connect Swiggy
+                        Connect {message.meta?.provider_name || "service"}
                       </button>
                     )}
 
