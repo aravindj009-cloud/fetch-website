@@ -1,6 +1,7 @@
 import { executeUniversalFetchRequest } from "../../lib/fetch-universal-execution.mjs";
 import { atcSafe, atcCreateTaskForOrder, atcSelectPartnerStoreForOrder, atcRecordEvent } from "../../lib/atc.mjs";
 import { offerOrderToPartnerStore } from "../../lib/partner-store.mjs";
+import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
 
 const SUPABASE_URL =
   process.env.VITE_SUPABASE_URL ||
@@ -467,6 +468,8 @@ export default async function handler(req, res) {
       });
     }
 
+    const swiggyToken = await getSwiggyToken(conversationId);
+
     const universal = await executeUniversalFetchRequest({
       text,
       customerId: clean(body.customerId) || null,
@@ -474,7 +477,10 @@ export default async function handler(req, res) {
       channel: "web",
       activeTaskId: clean(body.activeTaskId) || null,
       suppliedIntent: body.suppliedIntent || null,
-      suppliedContext: body.suppliedContext || {}
+      suppliedContext: {
+        ...(body.suppliedContext || {}),
+        provider_access_token: swiggyToken?.access_token || null
+      }
     });
 
     /*
@@ -618,13 +624,18 @@ export default async function handler(req, res) {
 
       const provider = universal.provider;
       const providerExecution = universal.execution || {};
+      const connectionRequired = provider.connection_status !== "connected";
+      const connectUrl = connectionRequired && provider.id === "swiggy_instamart"
+        ? `/api/fetch/swiggy/connect.mjs?conversationId=${encodeURIComponent(conversationId)}`
+        : null;
 
       return json(res, 200, {
         success: true,
         status: universal.status || "provider_connection_required",
         workflow_id: universal.workflow_id || null,
-        message: clean(providerExecution.message) ||
-          `Fetch selected ${provider.name} for this request.`,
+        message: connectionRequired && connectUrl
+          ? `I found ${provider.name}. Connect it to Fetch and I can continue with the order.`
+          : clean(providerExecution.message) || `Fetch selected ${provider.name} for this request.`,
         fetch: {
           intent: universal?.fetch?.decisions?.[0]?.intent || null,
           confidence: universal?.fetch?.decisions?.[0]?.intent?.confidence ?? null,
@@ -640,7 +651,8 @@ export default async function handler(req, res) {
           capabilities: provider.capabilities,
           transport: provider.transport,
           connection_status: provider.connection_status,
-          web_url: provider.web_url
+          web_url: provider.web_url,
+          connect_url: connectUrl
         },
         execution: {
           success: !!providerExecution.success,
