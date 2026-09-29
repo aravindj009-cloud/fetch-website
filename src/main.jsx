@@ -258,11 +258,19 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;");
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function formatInlineMarkdown(value) {
   let html = escapeHtml(value);
   html = html
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
     .replace(/(^|\s)(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noreferrer">$2</a>')
+    .replace(/(^|\s)\(([a-z0-9.-]+\.(?:com|org|in|co\.in))\)/gi, '$1<a href="https://$2" target="_blank" rel="noreferrer">$2</a>')
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/__(.+?)__/g, "<strong>$1</strong>")
     .replace(/\*([^*\n]+?)\*/g, "<em>$1</em>")
@@ -272,11 +280,12 @@ function formatInlineMarkdown(value) {
 
 function AssistantMessage({ text }) {
   const raw = String(text || "").replace(/\r/g, "").trim();
+  // Normalize model output even when Markdown headings/lists arrive inline.
   const normalized = raw
-    .replace(/\s+(#{1,3}\s+)/g, "\n\n$1")
-    .replace(/\s+((?:[-*•]|\d+\.)\s+)/g, "\n$1")
-    .replace(/\n\s+/g, "\n")
-    .replace(/\n{3,}/g, "\n\n");
+    .replace(/#{1,3}\s+/g, "\n\n$&")
+    .replace(/(^|\s)((?:[-*•]|\d+\.)\s+)/g, "$1\n$2")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
   const blocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
   if (!blocks.length) return null;
