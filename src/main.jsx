@@ -845,6 +845,72 @@ export default function App() {
     }
   }
 
+  async function approveOrder() {
+    const orderId = task?.orderId || localStorage.getItem(ACTIVE_ORDER_KEY);
+
+    if (!orderId || busy) return;
+
+    setBusy(true);
+
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify({
+          action: "approve_order",
+          orderId,
+          conversationId: conversationRef.current
+        })
+      });
+
+      const data = await readApiJson(response);
+
+      if (!response.ok || !data?.success) {
+        throw new Error(
+          data?.message || data?.error || "Could not approve the order."
+        );
+      }
+
+      setTask((current) => ({
+        ...(current || {}),
+        orderId,
+        stage: "finding shopper",
+        status: data.status,
+        network: "shopper"
+      }));
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: "assistant",
+          text: data.message || "Approved. Fetch is finding a shopper now.",
+          meta: {
+            status: data.status,
+            network: "shopper"
+          }
+        }
+      ]);
+
+      void watchOrder(orderId, task?.text || "Your Fetch order");
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: "assistant",
+          text: error?.message || "I couldn't approve that order.",
+          meta: { status: "error", network: "Fetch" }
+        }
+      ]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function watchOrder(orderId, originalText = "") {
     if (!orderId) return;
 
@@ -1538,7 +1604,7 @@ export default function App() {
                       <button
                         type="button"
                         className="approvalButton"
-                        onClick={() => send("approve")}
+                        onClick={approveOrder}
                         disabled={busy}
                       >
                         Approve order
