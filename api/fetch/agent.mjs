@@ -118,7 +118,7 @@ async function supabaseRequest(path, options = {}) {
   return data;
 }
 
-function webCustomerPhone(resolvedConversationId) {
+function webCustomerPhone(conversationId) {
   const raw = clean(conversationId || `web:${Date.now()}`);
   return `web:${raw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80)}`;
 }
@@ -418,7 +418,7 @@ function buildOrderStatusMessage(order) {
 
 async function approvePhysicalOrder({ orderId, conversationId }) {
   const id = clean(orderId);
-  const conversation = clean(resolvedConversationId);
+  const conversation = clean(conversationId);
 
   if (!id || !conversation) {
     return {
@@ -646,7 +646,7 @@ export default async function handler(req, res) {
         : req.body || {};
 
     const action = clean(body.action);
-    const conversationId = clean(body.resolvedConversationId);
+    const conversationId = clean(body.conversationId);
 
     if (action === "approve_order") {
       const approval = await approvePhysicalOrder({
