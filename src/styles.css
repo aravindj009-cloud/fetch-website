@@ -609,3 +609,25 @@ aside > p {
   background: #1111;
   font-size: .92em;
 }
+
+
+.assistantMessage a {
+  color: inherit;
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.assistantMessage p {
+  max-width: 68ch;
+}
+.assistantMessage h4 {
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+.assistantMessage ul,
+.assistantMessage ol {
+  padding-left: 20px;
+}
+.assistantMessage li::marker {
+  font-weight: 700;
+}
