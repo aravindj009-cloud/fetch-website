@@ -380,7 +380,10 @@ export default function App() {
             channel: "web",
             latitude,
             longitude,
-            suppliedContext: {}
+            suppliedContext: {},
+            history: messages
+              .slice(-8)
+              .map((item) => ({ role: item.role, text: item.text }))
           })
         }
       );
