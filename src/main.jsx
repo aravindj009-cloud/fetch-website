@@ -425,13 +425,15 @@ export default function App() {
         );
       }
 
+      const isConversation =
+        data?.fetch?.intent?.domain === "general_agent" ||
+        data?.execution?.execution_type === "general_agent";
+
       const route =
         data?.provider?.name ||
         data?.atc?.provider_name ||
-        data?.atc?.resource_type ||
-        data?.atc?.network ||
-        data?.fetch?.intent?.domain ||
-        "agent";
+        (!isConversation ? (data?.atc?.resource_type || data?.atc?.network || data?.fetch?.intent?.domain) : null) ||
+        "conversation";
 
       const stage =
         data.status === "completed"
@@ -454,7 +456,9 @@ export default function App() {
                           ? "out for delivery"
                           : data.status === "delivered"
                             ? "delivered"
-                            : "coordinating";
+                            : isConversation
+                              ? "conversation"
+                              : "coordinating";
 
       setTask({
         text,
