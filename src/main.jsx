@@ -308,7 +308,7 @@ export default function App() {
             channel: "web",
             latitude,
             longitude,
-            suppliedContext: { local_demo: true }
+            suppliedContext: {}
           })
         }
       );
@@ -371,7 +371,8 @@ export default function App() {
             "I’m working on that.",
           meta: {
             status: data.status,
-            network: route
+            network: route,
+            connect_url: data?.provider?.connect_url || null
           }
         }
       ]);
@@ -891,6 +892,17 @@ export default function App() {
                           </button>
                         ) : null}
                       </div>
+                    )}
+
+                    {message.meta?.connect_url && (
+                      <button
+                        type="button"
+                        className="approvalButton"
+                        onClick={() => window.location.href = message.meta.connect_url}
+                        disabled={busy}
+                      >
+                        Connect Swiggy
+                      </button>
                     )}
 
                     {message.meta?.status === "awaiting_customer_price_confirmation" && (
