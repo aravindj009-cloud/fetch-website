@@ -1,4 +1,5 @@
-// Production deployment marker: Swiggy OAuth connect flow is live-ready.\nconst clean = (value) => String(value ?? "").trim();
+// Production deployment marker: Swiggy OAuth connect flow is live-ready.
+// Deployment trigger: 2026-09-29 production sync.\nconst clean = (value) => String(value ?? "").trim();
 
 function base64Url(bytes) {
   let binary = "";
