@@ -1011,7 +1011,7 @@ export default function App() {
                               );
                             })}
                           </>
-                        ) :                         {instamartLive.productOptions?.length ? (
+                        ) : instamartLive.productOptions?.length ? (
                           <>
                             {Object.entries(
                               instamartLive.productOptions.reduce((groups, item) => {
