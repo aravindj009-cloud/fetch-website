@@ -1209,6 +1209,48 @@ export default async function handler(req, res) {
       });
     }
 
+    if (
+      universal?.status === "needs_clarification" &&
+      Array.isArray(universal?.atc?.candidates) &&
+      universal.atc.candidates.length
+    ) {
+      const decision = universal?.fetch?.decisions?.[0] || null;
+      const responseMessage =
+        clean(universal?.execution?.message) ||
+        "I found a few ways to handle that. Choose one and I’ll continue.";
+
+      const activeTaskState = buildActiveTask({
+        text,
+        universal,
+        status: universal.status,
+        message: responseMessage,
+        previousTask: activeTask
+      });
+
+      return json(res, 200, {
+        success: true,
+        message: responseMessage,
+        status: universal.status,
+        workflow_id: universal.workflow_id || null,
+        active_task: activeTaskState,
+        fetch: {
+          intent: decision?.intent || null,
+          confidence: decision?.intent?.confidence ?? null,
+          entities: decision?.entities || null,
+          plan: decision?.plan || null
+        },
+        atc: universal.atc,
+        execution: {
+          success: false,
+          status: universal.status,
+          message: responseMessage,
+          execution_type: universal?.execution?.execution_type || "provider_choice",
+          side_effect: false,
+          confirmation_required: true
+        }
+      });
+    }
+
     if (!isExecutionRequest(universal)) {
       const decision = universal?.fetch?.decisions?.[0] || null;
       const execution = universal?.execution || null;
