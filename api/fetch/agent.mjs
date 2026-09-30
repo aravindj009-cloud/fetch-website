@@ -166,6 +166,113 @@ function webCustomerPhone(conversationId) {
   return `web:${raw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80)}`;
 }
 
+async function getCustomerMemories(customerId) {
+  const id = clean(customerId);
+  if (!id) return [];
+
+  try {
+    const rows = await supabaseRequest(
+      `fetch_customer_memory?customer_id=eq.${encodeURIComponent(id)}&select=id,memory_key,memory_value,memory_type,source,confidence,explicit,expires_at,updated_at&order=updated_at.desc&limit=20`
+    );
+
+    const now = Date.now();
+    return (Array.isArray(rows) ? rows : []).filter((memory) => {
+      if (!memory?.expires_at) return true;
+      const expires = Date.parse(memory.expires_at);
+      return !Number.isFinite(expires) || expires > now;
+    });
+  } catch (error) {
+    console.error("FETCH MEMORY READ ERROR", error);
+    return [];
+  }
+}
+
+function extractExplicitMemory(text) {
+  const value = clean(text);
+  const match = value.match(
+    /^(?:please\s+)?remember(?:\s+that)?\s+(.+)$/i
+  );
+
+  if (!match) return null;
+
+  const statement = clean(match[1]).replace(/[.!?]+$/, "");
+  if (!statement) return null;
+
+  const preferenceMatch = statement.match(
+    /^(?:my\s+)?preferred\s+([^:]+?)\s*(?:is|are)\s+(.+)$/i
+  );
+
+  if (preferenceMatch) {
+    const subject = clean(preferenceMatch[1]).toLowerCase().replace(/\s+/g, "_");
+    return {
+      memoryKey: `preference.${subject}`,
+      memoryType: "preference",
+      value: {
+        value: clean(preferenceMatch[2]),
+        preference: clean(preferenceMatch[1])
+      }
+    };
+  }
+
+  const amMatch = statement.match(
+    /^my\s+([^:]+?)\s+(?:is|are)\s+(.+)$/i
+  );
+
+  if (amMatch) {
+    const subject = clean(amMatch[1]).toLowerCase().replace(/\s+/g, "_");
+    return {
+      memoryKey: `fact.${subject}`,
+      memoryType: "fact",
+      value: { value: clean(amMatch[2]) }
+    };
+  }
+
+  return {
+    memoryKey: `fact.${statement.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 100)}`,
+    memoryType: "fact",
+    value: { value: statement }
+  };
+}
+
+async function saveExplicitMemory(customerId, memory) {
+  if (!customerId || !memory) return null;
+
+  const existing = await supabaseRequest(
+    `fetch_customer_memory?customer_id=eq.${encodeURIComponent(customerId)}&memory_key=eq.${encodeURIComponent(memory.memoryKey)}&select=id&limit=1`
+  );
+
+  const payload = {
+    customer_id: customerId,
+    memory_key: memory.memoryKey,
+    memory_value: memory.value,
+    memory_type: memory.memoryType,
+    source: "user_explicit",
+    confidence: 1,
+    explicit: true,
+    updated_at: new Date().toISOString()
+  };
+
+  if (Array.isArray(existing) && existing.length) {
+    const rows = await supabaseRequest(
+      `fetch_customer_memory?id=eq.${encodeURIComponent(existing[0].id)}`,
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify(payload)
+      }
+    );
+    return Array.isArray(rows) ? rows[0] : rows;
+  }
+
+  const rows = await supabaseRequest("fetch_customer_memory", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify(payload)
+  });
+
+  return Array.isArray(rows) ? rows[0] : rows;
+}
+
 async function getOrCreateWebCustomer(resolvedConversationId) {
   const phone = webCustomerPhone(resolvedConversationId);
 
@@ -735,6 +842,14 @@ export default async function handler(req, res) {
       });
     }
 
+    const customer = await getOrCreateWebCustomer(resolvedConversationId);
+    const memories = await getCustomerMemories(customer?.id);
+
+    const explicitMemory = extractExplicitMemory(text);
+    if (explicitMemory) {
+      await saveExplicitMemory(customer?.id, explicitMemory);
+    }
+
     const swiggyToken = await getSwiggyToken(resolvedConversationId);
     const uberToken = await getUberToken(resolvedConversationId);
 
@@ -1043,7 +1158,10 @@ export default async function handler(req, res) {
       const naturalAnswer = await answerFetchConversation({
         text,
         history: Array.isArray(body.history) ? body.history : [],
-        activeTask
+        activeTask,
+        memories: explicitMemory
+          ? [...memories.filter((memory) => memory.memory_key !== explicitMemory.memoryKey), explicitMemory]
+          : memories
       });
 
       const responseMessage =
