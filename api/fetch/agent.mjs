@@ -6,6 +6,7 @@ import { getUberToken } from "../../lib/uber-oauth.mjs";
 import { prepareInstamartOrder } from "../../lib/fetch-instamart-execution.mjs";
 import { prepareUberRide } from "../../lib/uber-ride.mjs";
 import { answerFetchConversation } from "../../lib/fetch-conversation.mjs";
+import { persistFetchWorkflow } from "../../lib/fetch-workflow-store.mjs";
 
 const SUPABASE_URL =
   process.env.VITE_SUPABASE_URL ||
@@ -911,6 +912,16 @@ export default async function handler(req, res) {
       suppliedContext: { ...(body.suppliedContext || {}), provider_access_token: swiggyToken?.access_token || null, provider_access_tokens: { swiggy_instamart: swiggyToken?.access_token || null, uber: uberToken?.access_token || null }, location: { latitude: body.latitude ?? null, longitude: body.longitude ?? null } }
     });
 
+    await persistFetchWorkflow({
+      customerId: clean(body.customerId) || null,
+      conversationId: resolvedConversationId,
+      channel: "web",
+      sourceText: text,
+      universal,
+      activeTask,
+      eventType: "request_received"
+    });
+
     /*
      * Provider-first ATC:
      * if Fetch has identified an existing app such as Instamart or Uber,
@@ -1292,6 +1303,17 @@ export default async function handler(req, res) {
     const dispatch = await dispatchPhysicalOrder(order);
 
     if (dispatch.success) {
+      await persistFetchWorkflow({
+        customerId: clean(body.customerId) || null,
+        conversationId: resolvedConversationId,
+        channel: "web",
+        sourceText: text,
+        universal: { ...universal, status: "partner_offered", order_id: dispatch.order?.id || order.id },
+        activeTask,
+        orderId: dispatch.order?.id || order.id,
+        eventType: "partner_store_offered"
+      });
+
       return json(res, 200, {
         success: true,
         status: "partner_offered",
@@ -1348,6 +1370,17 @@ export default async function handler(req, res) {
     const fallbackOrder = Array.isArray(fallbackRows)
       ? fallbackRows[0]
       : fallbackRows;
+
+    await persistFetchWorkflow({
+      customerId: clean(body.customerId) || null,
+      conversationId: resolvedConversationId,
+      channel: "web",
+      sourceText: text,
+      universal: { ...universal, status: "finding_shopper", order_id: fallbackOrder?.id || order.id },
+      activeTask,
+      orderId: fallbackOrder?.id || order.id,
+      eventType: "shopper_fallback"
+    });
 
     return json(res, 200, {
       success: true,
