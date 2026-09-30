@@ -121,6 +121,13 @@ function buildActiveTask({
           }
         : previousTask?.provider || null,
     lastResponse: clean(message),
+    options: Array.isArray(universal?.atc?.candidates)
+      ? universal.atc.candidates.map((candidate) => ({
+          id: candidate.id || null,
+          name: candidate.name || candidate.id || "Option",
+          capabilities: candidate.capabilities || []
+        }))
+      : [],
     updatedAt: new Date().toISOString()
   };
 }
