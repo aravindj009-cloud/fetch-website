@@ -1205,7 +1205,6 @@ export default async function handler(req, res) {
     }
 
     const entities = universal?.fetch?.decisions?.[0]?.entities || {};
-    const customer = await getOrCreateWebCustomer(resolvedConversationId);
 
     const latitude = body.latitude;
     const longitude = body.longitude;
