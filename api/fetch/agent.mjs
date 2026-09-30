@@ -962,16 +962,26 @@ export default async function handler(req, res) {
       suppliedContext: { ...(body.suppliedContext || {}), provider_access_token: swiggyToken?.access_token || null, provider_access_tokens: { swiggy_instamart: swiggyToken?.access_token || null, uber: uberToken?.access_token || null }, location: { latitude: body.latitude ?? null, longitude: body.longitude ?? null } }
     });
 
-    const { persistFetchWorkflow } = await loadWorkflowStore();
-    await persistFetchWorkflow({
-      customerId: clean(body.customerId) || null,
-      conversationId: resolvedConversationId,
-      channel: "web",
-      sourceText: text,
-      universal,
-      activeTask,
-      eventType: "request_received"
-    });
+    /*
+     * Workflow persistence is non-critical to answering the customer.
+     * If the persistence module is unavailable or malformed, Fetch must
+     * continue serving the request instead of turning a normal question
+     * into a 500 response.
+     */
+    try {
+      const { persistFetchWorkflow } = await loadWorkflowStore();
+      await persistFetchWorkflow({
+        customerId: clean(body.customerId) || null,
+        conversationId: resolvedConversationId,
+        channel: "web",
+        sourceText: text,
+        universal,
+        activeTask,
+        eventType: "request_received"
+      });
+    } catch (workflowError) {
+      console.error("FETCH WORKFLOW PERSIST SKIPPED", workflowError);
+    }
 
     /*
      * Provider-first ATC:
