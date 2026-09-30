@@ -1,36 +1,12 @@
 import { executeUniversalFetchRequest } from "../../lib/fetch-universal-execution.mjs";
-
-async function loadAtc() {
-  return import("../../lib/atc.mjs");
-}
-
-async function loadPartnerStore() {
-  return import("../../lib/partner-store.mjs");
-}
-
-async function loadSwiggyOAuth() {
-  return import("../../lib/swiggy-oauth-v2.mjs");
-}
-
-async function loadUberOAuth() {
-  return import("../../lib/uber-oauth.mjs");
-}
-
-async function loadInstamartExecution() {
-  return import("../../lib/fetch-instamart-execution.mjs");
-}
-
-async function loadUberRide() {
-  return import("../../lib/uber-ride.mjs");
-}
-
-async function loadConversation() {
-  return import("../../lib/fetch-conversation.mjs");
-}
-
-async function loadWorkflowStore() {
-  return import("../../lib/fetch-workflow-store.mjs");
-}
+import { atcSafe, atcCreateTaskForOrder, atcSyncTaskFromOrder, atcSelectPartnerStoreForOrder, atcSelectResourceForOrder, atcRecordAssignment, atcRecordEvent } from "../../lib/atc.mjs";
+import { offerOrderToPartnerStore } from "../../lib/partner-store.mjs";
+import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
+import { getUberToken } from "../../lib/uber-oauth.mjs";
+import { prepareInstamartOrder } from "../../lib/fetch-instamart-execution.mjs";
+import { prepareUberRide } from "../../lib/uber-ride.mjs";
+import { answerFetchConversation } from "../../lib/fetch-conversation.mjs";
+import { persistFetchWorkflow } from "../../lib/fetch-workflow-store.mjs";
 
 const SUPABASE_URL =
   process.env.VITE_SUPABASE_URL ||
@@ -409,12 +385,6 @@ async function createPhysicalOrder({
   const order = Array.isArray(data) ? data[0] : data;
 
   if (order?.id) {
-    const {
-      atcSafe,
-      atcCreateTaskForOrder,
-      atcRecordEvent
-    } = await loadAtc();
-
     await atcSafe(
       () => atcCreateTaskForOrder(order),
       "web_task_create"
@@ -445,7 +415,6 @@ async function dispatchPhysicalOrder(order) {
     return { success: false, reason: "customer_location_missing" };
   }
 
-  const { atcSelectPartnerStoreForOrder } = await loadAtc();
   const match = await atcSelectPartnerStoreForOrder({ order });
 
   if (!match?.partnerStoreId) {
@@ -468,8 +437,6 @@ async function dispatchPhysicalOrder(order) {
       fallback: "shopper"
     };
   }
-
-  const { offerOrderToPartnerStore } = await loadPartnerStore();
 
   let offer;
   try {
@@ -714,14 +681,6 @@ async function approvePhysicalOrder({ orderId, conversationId }) {
 
   const updatedOrder = Array.isArray(updatedRows) ? updatedRows[0] : updatedRows;
 
-  const {
-    atcSafe,
-    atcSyncTaskFromOrder,
-    atcSelectResourceForOrder,
-    atcRecordAssignment,
-    atcRecordEvent
-  } = await loadAtc();
-
   await atcSafe(
     () => atcSyncTaskFromOrder(updatedOrder || order),
     "web_approval_task_sync"
@@ -938,8 +897,6 @@ export default async function handler(req, res) {
       await saveExplicitMemory(customer?.id, explicitMemory);
     }
 
-    const { getSwiggyToken } = await loadSwiggyOAuth();
-    const { getUberToken } = await loadUberOAuth();
     const swiggyToken = await getSwiggyToken(resolvedConversationId);
     const uberToken = await getUberToken(resolvedConversationId);
 
@@ -962,26 +919,15 @@ export default async function handler(req, res) {
       suppliedContext: { ...(body.suppliedContext || {}), provider_access_token: swiggyToken?.access_token || null, provider_access_tokens: { swiggy_instamart: swiggyToken?.access_token || null, uber: uberToken?.access_token || null }, location: { latitude: body.latitude ?? null, longitude: body.longitude ?? null } }
     });
 
-    /*
-     * Workflow persistence is non-critical to answering the customer.
-     * If the persistence module is unavailable or malformed, Fetch must
-     * continue serving the request instead of turning a normal question
-     * into a 500 response.
-     */
-    try {
-      const { persistFetchWorkflow } = await loadWorkflowStore();
-      await persistFetchWorkflow({
-        customerId: clean(body.customerId) || null,
-        conversationId: resolvedConversationId,
-        channel: "web",
-        sourceText: text,
-        universal,
-        activeTask,
-        eventType: "request_received"
-      });
-    } catch (workflowError) {
-      console.error("FETCH WORKFLOW PERSIST SKIPPED", workflowError);
-    }
+    await persistFetchWorkflow({
+      customerId: clean(body.customerId) || null,
+      conversationId: resolvedConversationId,
+      channel: "web",
+      sourceText: text,
+      universal,
+      activeTask,
+      eventType: "request_received"
+    });
 
     /*
      * Provider-first ATC:
@@ -1131,7 +1077,6 @@ export default async function handler(req, res) {
         body.suppliedContext?.local_demo !== true
       ) {
         const entities = universal?.fetch?.decisions?.[0]?.entities || {};
-        const { prepareUberRide } = await loadUberRide();
         const execution = await prepareUberRide({
           accessToken: uberToken.access_token,
           pickupLatitude: body.latitude,
@@ -1179,7 +1124,6 @@ export default async function handler(req, res) {
         body.suppliedContext?.local_demo !== true
       ) {
         const entities = universal?.fetch?.decisions?.[0]?.entities || {};
-        const { prepareInstamartOrder } = await loadInstamartExecution();
         const execution = await prepareInstamartOrder({
           accessToken: swiggyToken.access_token,
           items: Array.isArray(entities?.items) ? entities.items : []
@@ -1310,7 +1254,6 @@ export default async function handler(req, res) {
     if (!isExecutionRequest(universal)) {
       const decision = universal?.fetch?.decisions?.[0] || null;
       const execution = universal?.execution || null;
-      const { answerFetchConversation } = await loadConversation();
       const naturalAnswer = await answerFetchConversation({
         text,
         history: Array.isArray(body.history) ? body.history : [],
