@@ -273,6 +273,40 @@ async function saveExplicitMemory(customerId, memory) {
   return Array.isArray(rows) ? rows[0] : rows;
 }
 
+async function forgetMemories(customerId, text) {
+  const id = clean(customerId);
+  const request = clean(text).replace(/^(?:please\s+)?forget(?:\s+that)?\s+/i, "").replace(/[.!?]+$/, "").trim();
+  if (!id || !request) return 0;
+
+  const rows = await supabaseRequest(
+    `fetch_customer_memory?customer_id=eq.${encodeURIComponent(id)}&select=id,memory_key,memory_value`
+  );
+
+  const memories = Array.isArray(rows) ? rows : [];
+  const target = request.toLowerCase();
+  let removed = 0;
+
+  for (const memory of memories) {
+    const haystack = [
+      memory.memory_key,
+      JSON.stringify(memory.memory_value || {})
+    ].join(" ").toLowerCase();
+
+    if (
+      haystack.includes(target) ||
+      target.includes(String(memory.memory_key || "").toLowerCase().replace(/^fact\./, "").replace(/^preference\./, ""))
+    ) {
+      await supabaseRequest(
+        `fetch_customer_memory?id=eq.${encodeURIComponent(memory.id)}`,
+        { method: "DELETE" }
+      );
+      removed += 1;
+    }
+  }
+
+  return removed;
+}
+
 async function getOrCreateWebCustomer(resolvedConversationId) {
   const phone = webCustomerPhone(resolvedConversationId);
 
@@ -846,6 +880,11 @@ export default async function handler(req, res) {
     const memories = await getCustomerMemories(customer?.id);
 
     const explicitMemory = extractExplicitMemory(text);
+    const isForgetRequest = /^(?:please\s+)?forget(?:\s+that)?\s+/i.test(text);
+    const forgottenCount = isForgetRequest
+      ? await forgetMemories(customer?.id, text)
+      : 0;
+
     if (explicitMemory) {
       await saveExplicitMemory(customer?.id, explicitMemory);
     }
@@ -1165,6 +1204,11 @@ export default async function handler(req, res) {
       });
 
       const responseMessage =
+        (isForgetRequest
+          ? (forgottenCount
+              ? "Done — I’ve forgotten that preference."
+              : "I couldn’t find a saved preference matching that.")
+          : null) ||
         naturalAnswer ||
         clean(execution?.message) ||
         clean(decision?.decision?.reason) ||
