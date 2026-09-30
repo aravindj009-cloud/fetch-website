@@ -631,3 +631,13 @@ aside > p {
 .assistantMessage li::marker {
   font-weight: 700;
 }
+
+
+.fetchOptionList{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.fetchOptionButton{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 13px;border:1px solid rgba(0,0,0,.10);border-radius:13px;background:#fff;text-align:left;cursor:pointer}
+.fetchOptionButton:hover{border-color:rgba(0,0,0,.28);transform:translateY(-1px)}
+.fetchOptionButton:disabled{opacity:.55;cursor:default;transform:none}
+.fetchOptionButton span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.fetchOptionButton strong{font-size:13px}
+.fetchOptionButton small{font-size:10px;opacity:.58;line-height:1.35}
+.fetchOptionButton>b{font-size:11px;white-space:nowrap}
