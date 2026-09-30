@@ -590,7 +590,14 @@ export default function App() {
                   provider_name: data?.provider?.name || null,
                   provider_id: data?.provider?.id || null,
                   action_url: data?.provider?.action_url || null,
-                  action_label: data?.provider?.action_label || null
+                  action_label: data?.provider?.action_label || null,
+                  options: Array.isArray(data?.atc?.candidates)
+                    ? data.atc.candidates.map((candidate) => ({
+                        id: candidate.id || null,
+                        name: candidate.name || candidate.id || "Option",
+                        capabilities: candidate.capabilities || []
+                      }))
+                    : []
                 }
               : null
         }
@@ -1365,6 +1372,32 @@ export default function App() {
                     ) : (
                       message.text
                     )}
+
+                    {message.role === "assistant" &&
+                      Array.isArray(message.meta?.options) &&
+                      message.meta.options.length > 0 && (
+                        <div className="fetchOptionList">
+                          {message.meta.options.map((option) => (
+                            <button
+                              key={option.id || option.name}
+                              type="button"
+                              className="fetchOptionButton"
+                              onClick={() => send(option.name)}
+                              disabled={busy}
+                            >
+                              <span>
+                                <strong>{option.name}</strong>
+                                <small>
+                                  {option.capabilities?.length
+                                    ? option.capabilities.join(" · ")
+                                    : "Continue with this option"}
+                                </small>
+                              </span>
+                              <b>Choose →</b>
+                            </button>
+                          ))}
+                        </div>
+                      )}
 
                     {message.id === messages[messages.length - 1]?.id && uberLive && (
                       <div className="instamartLiveCard uberLiveCard">
