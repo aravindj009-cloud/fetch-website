@@ -42,7 +42,10 @@ function displayMessage(value, fallback = "I’m working on that.") {
   return String(value);
 }
 
-const API_URL = "/api/fetch/agent.mjs";
+const API_URL =
+  typeof window !== "undefined" && window.location.hostname === "tryfetch.in"
+    ? "https://www.tryfetch.in/api/fetch/agent.mjs"
+    : "/api/fetch/agent.mjs";
 async function readApiJson(response) {
   const contentType = response.headers.get("content-type") || "";
   const body = await response.text();
