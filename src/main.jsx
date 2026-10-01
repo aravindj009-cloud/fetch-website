@@ -1690,7 +1690,9 @@ export default function App() {
       Swiggy: { url: "/api/fetch/swiggy/connect.mjs?conversationId=" + encodeURIComponent(conversationId), mode: "connect" },
       Uber: { url: "/api/fetch/uber/connect.mjs?conversationId=" + encodeURIComponent(conversationId), mode: "connect" },
       Rapido: { url: null, mode: "pending" },
-      Zomato: { url: null, mode: "pending" }
+      Zomato: { url: null, mode: "pending" },
+      Email: { url: null, mode: "pending" },
+      Calendar: { url: null, mode: "pending" }
     };
 
     const route = routes[name];
@@ -1862,12 +1864,13 @@ export default function App() {
               ["Swiggy", "Food & grocery"],
               ["Zomato", "Food delivery"],
               ["Uber", "Mobility"],
-              ["Rapido", "Bike, auto & cab"]
+              ["Rapido", "Bike, auto & cab"],
+              ["Email", "Send & manage email"],
+              ["Calendar", "Schedule & manage events"]
             ].map(([name, description]) => {
               const status =
                 connectedPlugins[name] === "connected" ? "Connected" :
-                name === "Zomato" ? "Coming soon" :
-                name === "Rapido" ? "Open" : "Connect";
+                ["Zomato", "Rapido", "Email", "Calendar"].includes(name) ? "Coming soon" : "Connect";
               return (
                 <button className="fetchPluginRow" key={name} onClick={() => connectPlugin(name)}>
                   <span className="fetchPluginIcon">{name.slice(0, 1)}</span>
