@@ -145,7 +145,14 @@ function getInstamartCartData(cart) {
 
 function getInstamartPricing(cart) {
   const data = getInstamartCartData(cart);
-  return data?.pricing || data?.bill || {};
+  const source = data?.pricing || data?.bill || data || {};
+  return {
+    ...source,
+    item_total: source?.item_total ?? source?.itemTotal ?? source?.subtotal ?? null,
+    delivery_charge: source?.delivery_charge ?? source?.deliveryCharge ?? null,
+    taxes_and_charges: source?.taxes_and_charges ?? source?.taxesAndCharges ?? source?.taxes ?? null,
+    to_pay: source?.to_pay ?? source?.billToPay ?? source?.total ?? null
+  };
 }
 
 function getInstamartPaymentMethods(paymentOptions, cart) {
@@ -1989,8 +1996,12 @@ export default function App() {
                             {(() => {
                               const cartData = getInstamartCartData(instamartLive.cart);
                               const pricing = getInstamartPricing(instamartLive.cart);
-                              const cartItems = Array.isArray(cartData?.items) ? cartData.items : [];
-                              const total = pricing?.to_pay ?? pricing?.billToPay ?? cartData?.to_pay ?? "—";
+                              const cartItems = Array.isArray(cartData?.items)
+                                ? cartData.items
+                                : Array.isArray(cartData?.cartItems)
+                                  ? cartData.cartItems
+                                  : [];
+                              const total = pricing?.to_pay ?? cartData?.to_pay ?? cartData?.billToPay ?? "—";
                               return (
                                 <>
                                   {cartItems.length > 0 && (
