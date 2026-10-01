@@ -4,6 +4,7 @@ import { offerOrderToPartnerStore } from "../../lib/partner-store.mjs";
 import { getProvider } from "../../lib/fetch-provider-registry.mjs";
 import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
 import { getUberToken } from "../../lib/uber-oauth.mjs";
+import { getGmailToken } from "../../lib/gmail-oauth.mjs";
 import { prepareInstamartOrder, confirmInstamartCheckout } from "../../lib/fetch-instamart-execution.mjs";
 import { getAddresses as getSwiggyAddresses } from "../../lib/swiggy-instamart-mcp.mjs";
 import { prepareUberRide } from "../../lib/uber-ride.mjs";
@@ -1285,6 +1286,7 @@ export default async function handler(req, res) {
 
     const swiggyToken = await getSwiggyToken(resolvedConversationId);
     const uberToken = await getUberToken(resolvedConversationId);
+    const gmailToken = await getGmailToken(resolvedConversationId);
 
     const universal = await executeUniversalFetchRequest({
       text,
@@ -1302,7 +1304,7 @@ export default async function handler(req, res) {
         history: Array.isArray(body.history) ? body.history.slice(-10) : []
       },
       suppliedIntent: body.suppliedIntent || null,
-      suppliedContext: { ...(body.suppliedContext || {}), provider_access_token: swiggyToken?.access_token || null, provider_access_tokens: { swiggy_instamart: swiggyToken?.access_token || null, uber: uberToken?.access_token || null }, location: { latitude: body.latitude ?? null, longitude: body.longitude ?? null } }
+      suppliedContext: { ...(body.suppliedContext || {}), provider_access_token: swiggyToken?.access_token || null, provider_access_tokens: { swiggy_instamart: swiggyToken?.access_token || null, uber: uberToken?.access_token || null, gmail: gmailToken?.access_token || null }, location: { latitude: body.latitude ?? null, longitude: body.longitude ?? null } }
     });
 
     await persistFetchWorkflow({
