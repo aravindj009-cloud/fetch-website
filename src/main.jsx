@@ -139,25 +139,6 @@ function getHost(url) {
   }
 }
 
-function getProviderActionUrl(value) {
-  if (!value || typeof value !== "object") return "";
-  const queue = [value];
-  const seen = new Set();
-
-  while (queue.length) {
-    const current = queue.shift();
-    if (!current || typeof current !== "object" || seen.has(current)) continue;
-    seen.add(current);
-
-    for (const entry of Object.values(current)) {
-      if (typeof entry === "string" && /^https?:\\/\\//i.test(entry)) return entry;
-      if (entry && typeof entry === "object") queue.push(entry);
-    }
-  }
-
-  return "";
-}
-
 function getInstamartCartData(cart) {
   return cart?.data?.data || cart?.data || cart || {};
 }
@@ -623,7 +604,7 @@ export default function App() {
             addressId: conversationalInstamartAddressId,
             items: (instamartLive?.requestedItems || []).map((item) => ({
               item: item.item || item.name,
-              quantity: item.quantity || 1,\n            unit: item.unit || null,\n            unit: item.unit || null
+              quantity: item.quantity || 1
             }))
           })
         });
@@ -1104,7 +1085,7 @@ export default function App() {
           addressId,
           items: (instamartLive?.requestedItems || []).map((item) => ({
             item: item.item || item.name,
-            quantity: item.quantity || 1,\n            unit: item.unit || null
+            quantity: item.quantity || 1
           }))
         })
       });
@@ -1183,16 +1164,6 @@ export default function App() {
           ...(selectedPayment === "UPI" && selectedIntentApp ? { intentApp: selectedIntentApp } : {}),
           confirmed: true
         };
-      } else if (action === "payment_status") {
-        const payment = instamartLive.payment || instamartLive.data || {};
-        const paasId = payment?.paasId || payment?.data?.paasId;
-        if (!paasId) throw new Error("The payment reference is not available yet. Start the payment again.");
-        payload = {
-          action: "payment_status",
-          conversationId: conversationRef.current,
-          paasId,
-          orderId: payment?.orderId || instamartLive.orderId || payment?.data?.orderId || undefined
-        };
       } else {
         throw new Error("Unknown Instamart action.");
       }
@@ -1221,38 +1192,16 @@ export default function App() {
         }]);
       } else {
         const orderId = data?.data?.orderId || data?.orderId || data?.order?.orderId || null;
-        const pendingPayment = data.status === "awaiting_payment" || String(data?.data?.status || "").toUpperCase() === "PENDING_PAYMENT";
-
-        if (pendingPayment || action === "payment_status" && data.status === "awaiting_payment") {
-          setTask((current) => ({ ...(current || {}), stage: "payment pending", status: data.status, network: "Instamart", orderId }));
-          setInstamartLive((current) => ({ ...(current || {}), payment: data.payment || data.data || current?.payment, orderId }));
-          if (action === "payment_status") {
-            setMessages((current) => [...current, {
-              id: makeId(),
-              role: "assistant",
-              text: data?.message || "Payment is still processing. I’ll keep the order unconfirmed until payment succeeds.",
-              meta: { status: data.status, network: "Instamart" }
-            }]);
-          } else {
-            setMessages((current) => [...current, {
-              id: makeId(),
-              role: "assistant",
-              text: "Your Instamart order is ready for payment. Complete the payment below; Fetch will only mark the order complete after payment succeeds.",
-              meta: { status: data.status, network: "Instamart" }
-            }]);
-          }
-        } else {
-          setTask((current) => ({ ...(current || {}), stage: "order placed", status: data.status, network: "Instamart", orderId }));
-          setMessages((current) => [...current, {
-            id: makeId(),
-            role: "assistant",
-            text: data?.message || "Instamart order placed successfully.",
-            meta: { status: data.status, network: "Instamart" }
-          }]);
-          if (orderId) {
-            setInstamartLive((current) => ({ ...(current || {}), orderId }));
-            void refreshInstamartTracking(orderId);
-          }
+        setTask((current) => ({ ...(current || {}), stage: "order placed", status: data.status, network: "Instamart", orderId }));
+        setMessages((current) => [...current, {
+          id: makeId(),
+          role: "assistant",
+          text: data?.message || "Instamart order placed successfully.",
+          meta: { status: data.status, network: "Instamart" }
+        }]);
+        if (orderId) {
+          setInstamartLive((current) => ({ ...(current || {}), orderId }));
+          void refreshInstamartTracking(orderId);
         }
       }
     } catch (error) {
@@ -1926,7 +1875,7 @@ export default function App() {
                               </div>
                             )}
                           </>
-                        ) : instamartLive.productOptions?.length && instamartLive.status !== "awaiting_payment" ? (
+                        ) : instamartLive.productOptions?.length ? (
                           <>
                             {Object.entries(
                               instamartLive.productOptions.reduce((groups, item) => {
@@ -1977,23 +1926,6 @@ export default function App() {
                           </>
                         ) : instamartLive.cart ? (
                           <>
-                            {instamartLive.status === "awaiting_payment" && (
-                              <div className="instamartEmptyState" style={{marginBottom:"12px"}}>
-                                <strong>Payment is required to finish this order</strong>
-                                <span>Fetch has prepared and verified the live cart. The order will not be marked placed until payment succeeds.</span>
-                                {getProviderActionUrl(instamartLive.payment) && (
-                                  <a
-                                    className="approvalButton"
-                                    href={getProviderActionUrl(instamartLive.payment)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    style={{display:"block",textAlign:"center",textDecoration:"none",marginTop:"10px"}}
-                                  >
-                                    Continue with payment
-                                  </a>
-                                )}
-                              </div>
-                            )}
                             <div style={{fontSize:"12px",fontWeight:800}}>Live cart</div>
                             <div style={{fontSize:"11px",opacity:.65,marginTop:"8px"}}>
                               Live cart retrieved from Swiggy. Review the total and payment method below.
