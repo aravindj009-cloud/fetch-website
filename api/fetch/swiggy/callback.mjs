@@ -25,8 +25,13 @@ export default async function handler(req, res) {
     const token = await exchangeSwiggyCode(row, code);
     await saveSwiggyToken(row.conversation_id, token);
 
-    const target = new URL("/", `https://${req.headers.host || "localhost"}`);
+    // Always return the customer to the canonical Fetch production domain.
+    // The OAuth callback itself runs on Swiggy's allowlisted Vercel URL,
+    // which is a different browser origin from tryfetch.in. Returning to
+    // tryfetch.in preserves the browser's Fetch conversation/session state.
+    const target = new URL("https://tryfetch.in/");
     target.searchParams.set("swiggy", "connected");
+    target.searchParams.set("conversationId", row.conversation_id);
     res.status(302);
     res.setHeader("Location", target.toString());
     res.end();
