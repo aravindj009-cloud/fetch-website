@@ -416,6 +416,43 @@ export default function App() {
       return;
     }
 
+    // Natural-language address selection should use the same saved address
+    // ID as the visible Instamart address buttons.
+    let conversationalInstamartAddressId = instamartLive?.addressId || null;
+    if (
+      !conversationalInstamartAddressId &&
+      instamartLive?.status === "address_selection_required" &&
+      Array.isArray(instamartLive?.addresses)
+    ) {
+      const normalizeAddress = (value) =>
+        String(value || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+      const requestedAddress = normalizeAddress(text);
+      const match = instamartLive.addresses.find((address) => {
+        const candidates = [
+          address?.label,
+          address?.name,
+          address?.address,
+          address?.formattedAddress,
+          address?.addressLine,
+          address?.addressLine2
+        ].map(normalizeAddress).filter(Boolean);
+
+        return candidates.some((candidate) =>
+          requestedAddress === candidate ||
+          requestedAddress.includes(candidate) ||
+          candidate.includes(requestedAddress)
+        );
+      });
+
+      conversationalInstamartAddressId =
+        match?.id || match?.addressId || null;
+    }
+
     setMessages((current) => [
       ...current,
       {
@@ -485,7 +522,7 @@ export default function App() {
             suppliedContext: {
               instamart_payment_method: selectedPayment || null,
               instamart_intent_app: selectedIntentApp || null,
-              instamart_address_id: instamartLive?.addressId || null
+              instamart_address_id: conversationalInstamartAddressId
             },
             activeTask: task,
             history: messages
