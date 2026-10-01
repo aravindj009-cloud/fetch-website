@@ -29,7 +29,8 @@ export default async function handler(req, res) {
     if (action === "prepare") return json(res, 200, await prepareInstamartOrder({
       accessToken: token.access_token,
       items: Array.isArray(body.items) ? body.items : [],
-      addressId: clean(body.addressId)
+      addressId: clean(body.addressId),
+      autoSelect: body.autoSelect === true
     }));
     if (action === "selection") return json(res, 200, await applyInstamartSelection({ accessToken: token.access_token, addressId: clean(body.addressId), items: Array.isArray(body.items) ? body.items : [] }));
     if (action === "checkout") return json(res, 200, await confirmInstamartCheckout({ accessToken: token.access_token, addressId: clean(body.addressId), paymentMethod: clean(body.paymentMethod) || undefined, intentApp: clean(body.intentApp) || undefined, generateUPIQR: body.generateUPIQR === true, confirmed: body.confirmed === true }));
