@@ -150,18 +150,31 @@ function getInstamartPricing(cart) {
 
 function getInstamartPaymentMethods(paymentOptions, cart) {
   const source =
+    paymentOptions?.data?.data ||
     paymentOptions?.data ||
     paymentOptions ||
     getInstamartCartData(cart)?.paymentOptions ||
     {};
 
-  const methods = Array.isArray(source?.allMethods)
-    ? source.allMethods
-    : Array.isArray(source?.availablePaymentMethods)
-      ? source.availablePaymentMethods.map((id) => ({ id, groupName: id, displayName: id }))
-      : [];
+  const direct =
+    Array.isArray(source?.allMethods) ? source.allMethods :
+    Array.isArray(source?.availablePaymentMethods) ? source.availablePaymentMethods :
+    Array.isArray(source?.methods) ? source.methods :
+    [];
 
-  return methods.filter((method) => method && (method.enabled !== false));
+  const normalized = direct.map((method) => {
+    if (typeof method === "string") {
+      return { id: method, groupName: method, displayName: method };
+    }
+    return {
+      ...method,
+      id: method?.id || method?.methodId || method?.paymentMethod || method?.groupName,
+      groupName: method?.groupName || method?.type || method?.paymentMethod || method?.id,
+      displayName: method?.displayName || method?.name || method?.label || method?.groupName || method?.id
+    };
+  });
+
+  return normalized.filter((method) => method?.id && method.enabled !== false);
 }
 
 function flowNodeClass(task, index) {
