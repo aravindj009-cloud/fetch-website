@@ -1691,7 +1691,7 @@ export default function App() {
       Uber: { url: "/api/fetch/uber/connect.mjs?conversationId=" + encodeURIComponent(conversationId), mode: "connect" },
       Rapido: { url: null, mode: "pending" },
       Zomato: { url: null, mode: "pending" },
-      Email: { url: null, mode: "pending" },
+      Email: { url: "/api/fetch/gmail/connect.mjs?conversationId=" + encodeURIComponent(conversationId), mode: "connect" },
       Calendar: { url: null, mode: "pending" }
     };
 
@@ -1907,7 +1907,7 @@ export default function App() {
                 {group.items.map(([name, description]) => {
                   const status =
                     connectedPlugins[name] === "connected" ? "Connected" :
-                    ["Swiggy"].includes(name) ? "Connect" : "Coming soon";
+                    ["Swiggy", "Uber", "Email"].includes(name) ? "Connect" : "Coming soon";
                   return (
                     <button className="fetchPluginRow" key={name} onClick={() => connectPlugin(name)}>
                       <span className="fetchPluginIcon">{name === "Booking.com" ? "B" : name === "Skyscanner" ? "S" : name === "ixigo" ? "i" : name.slice(0, 1)}</span>
