@@ -1056,6 +1056,7 @@ export default async function handler(req, res) {
       const execution = await prepareInstamartOrder({
         accessToken: swiggyToken.access_token,
         items: Array.isArray(entities?.items) ? entities.items : [],
+        autoSelect: entities?.autoShopping === true,
         addressId: suppliedInstamartAddressId
       });
 
