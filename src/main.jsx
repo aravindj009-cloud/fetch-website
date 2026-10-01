@@ -496,6 +496,7 @@ export default function App() {
   const [selectedSpins, setSelectedSpins] = useState({});
   const [selectedPayment, setSelectedPayment] = useState("");
   const [selectedIntentApp, setSelectedIntentApp] = useState("");
+  const [showInstamartConfirmation, setShowInstamartConfirmation] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState(null);
 
   const activeWatchRef = useRef(null);
@@ -1181,11 +1182,12 @@ export default function App() {
       setInstamartLive((current) => ({ ...(current || {}), ...data }));
 
       if (action === "selection") {
-        setTask((current) => ({ ...(current || {}), stage: "cart ready for approval", status: data.status, network: "Instamart" }));
+        setShowInstamartConfirmation(false);
+        setTask((current) => ({ ...(current || {}), stage: "payment", status: data.status, network: "Instamart" }));
         setMessages((current) => [...current, {
           id: makeId(),
           role: "assistant",
-          text: "Your live Instamart cart is ready. Review the total, delivery address and payment method before I place it.",
+          text: "Your selection is confirmed. Choose your payment method and I’ll place the order.",
           meta: { status: data.status, network: "Instamart" }
         }]);
       } else {
@@ -1916,10 +1918,10 @@ export default function App() {
                             <button
                               type="button"
                               className="approvalButton"
-                              onClick={() => runInstamartLiveAction("selection")}
-                              disabled={busy}
+                              onClick={() => setShowInstamartConfirmation(true)}
+                              disabled={busy || !Object.keys(selectedSpins).length}
                             >
-                              Build live cart
+                              Review & continue
                             </button>
                           </>
                         ) : instamartLive.cart ? (
@@ -2001,7 +2003,7 @@ export default function App() {
                               onClick={() => runInstamartLiveAction("checkout")}
                               disabled={busy || !selectedPayment}
                             >
-                              Confirm & place Instamart order
+                              Pay & place order
                             </button>
                           </>
                         ) : (
@@ -2374,6 +2376,48 @@ export default function App() {
           </h2>
 
         </section>
+
+        {showInstamartConfirmation && instamartLive?.productOptions?.length > 0 && (
+          <div className="fetchModalBackdrop" role="presentation">
+            <div className="fetchConfirmModal" role="dialog" aria-modal="true" aria-labelledby="fetch-confirm-title">
+              <div className="fetchModalEyebrow">FETCH · CONFIRM YOUR SELECTION</div>
+              <h2 id="fetch-confirm-title">Is this the order you want?</h2>
+              <p className="fetchModalIntro">
+                Review the selected Instamart items before Fetch builds your live cart.
+              </p>
+
+              <div className="fetchConfirmSummary">
+                {Object.values(selectedSpins).map((spinId) => {
+                  const option = (instamartLive.productOptions || []).find((item) => item.spinId === spinId);
+                  if (!option) return null;
+                  return (
+                    <div className="fetchConfirmItem" key={spinId}>
+                      <div>
+                        <strong>{option.name || option.requested}</strong>
+                        <span>{formatRequestedQuantity(option)}</span>
+                      </div>
+                      <b>{option.price != null ? `₹${option.price}` : "Price shown in cart"}</b>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="fetchConfirmAddress">
+                <span>Deliver to</span>
+                <strong>{instamartLive.address?.label || instamartLive.address?.address || "Saved Instamart address"}</strong>
+              </div>
+
+              <div className="fetchModalActions">
+                <button type="button" className="fetchModalSecondary" onClick={() => setShowInstamartConfirmation(false)} disabled={busy}>
+                  Change selection
+                </button>
+                <button type="button" className="fetchModalPrimary" onClick={() => runInstamartLiveAction("selection")} disabled={busy}>
+                  Confirm & continue to payment
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </main>
 
