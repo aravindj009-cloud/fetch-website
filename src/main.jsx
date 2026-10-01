@@ -578,6 +578,115 @@ export default function App() {
       return;
     }
 
+    // Once a live provider workflow exists, conversational follow-ups must
+    // stay inside that workflow. Never send them back to the general agent.
+    if (
+      instamartLive?.status === "awaiting_product_selection" &&
+      instamartLive?.addressId
+    ) {
+      const confirmationOnly = /^(ok|okay|yes|yeah|yep|sure|go ahead|continue|proceed|fine|that works|sounds good)[.! ]*$/i.test(text);
+
+      try {
+        const requestedItems = Array.isArray(instamartLive.requestedItems)
+          ? instamartLive.requestedItems
+          : [];
+
+        const refinedItems = confirmationOnly
+          ? requestedItems
+          : requestedItems.length
+            ? requestedItems.map((item, index) =>
+                index === 0
+                  ? {
+                      item: text,
+                      quantity: item.quantity || 1
+                    }
+                  : item
+              )
+            : [{ item: text, quantity: 1 }];
+
+        const response = await fetch("/api/fetch/swiggy/execute.mjs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          },
+          body: JSON.stringify({
+            action: "prepare",
+            conversationId: conversationRef.current,
+            addressId: instamartLive.addressId,
+            items: refinedItems.map((item) => ({
+              item: item.item || item.name,
+              quantity: item.quantity || 1
+            }))
+          })
+        });
+
+        const data = await readApiJson(response);
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.message || data?.error || "Could not continue the Instamart request.");
+        }
+
+        setInstamartLive(data);
+        setSelectedSpins({});
+        setSelectedPayment("");
+        setSelectedIntentApp("");
+        setTask((current) => ({
+          ...(current || {}),
+          latestText: text,
+          status: data.status,
+          stage:
+            data.status === "awaiting_product_selection"
+              ? "products ready"
+              : data.status === "awaiting_checkout_confirmation"
+                ? "cart ready for approval"
+                : "coordinating",
+          network: "Instamart",
+          provider: { id: "swiggy_instamart", name: "Instamart" }
+        }));
+
+        setMessages((current) => [
+          ...current,
+          {
+            id: makeId(),
+            role: "assistant",
+            text:
+              data.message ||
+              "I’ve updated the Instamart request. Review the live matches.",
+            meta: { status: data.status, network: "Instamart" }
+          }
+        ]);
+      } catch (error) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: makeId(),
+            role: "assistant",
+            text: error?.message || "I couldn't continue the live Instamart request.",
+            meta: { status: "error", network: "Instamart" }
+          }
+        ]);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    // If Fetch is waiting for an address, don't let an unrelated follow-up
+    // restart the entire shopping workflow.
+    if (instamartLive?.status === "address_selection_required") {
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: "assistant",
+          text: "Please choose one of the saved delivery addresses above so I can continue the Instamart order.",
+          meta: { status: "address_selection_required", network: "Instamart" }
+        }
+      ]);
+      setBusy(false);
+      return;
+    }
+
     setTask({
       text,
       stage: "understanding",
