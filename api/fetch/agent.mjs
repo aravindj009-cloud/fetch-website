@@ -68,7 +68,7 @@ function isActionConfirmation(text) {
 
 function extractGmailRequest(text) {
   const value = clean(text).replace(/[“”"]/g, "");
-  const toMatch = value.match(/\b(?:to|email)\s+([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i);
+  const toMatch = value.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
   const selfMatch = /\bto\s+(?:myself|me)\b/i.test(value);
   const subjectMatch = value.match(/\bsubject\s*[:=-]?\s*(.+?)(?=\s+(?:saying|that says|with the message)\b|$)/i);
   const bodyMatch =
@@ -880,6 +880,67 @@ export default async function handler(req, res) {
     const activeTask = body.activeTask && typeof body.activeTask === "object"
       ? body.activeTask
       : null;
+
+    // Recover a pending Gmail send from conversation history when the browser
+    // does not carry the active task forward after an intermediate error.
+    let gmailTask = activeTask;
+    const recentHistoryForGmail = Array.isArray(body.history)
+      ? body.history.slice(-12)
+      : [];
+    const gmailPendingInHistory = recentHistoryForGmail.some(
+      (entry) =>
+        entry?.role === "assistant" &&
+        /ready to send this email|who should i send the email to|what would you like the email to say/i.test(
+          String(entry?.text || "")
+        )
+    );
+    const gmailOriginalRequest = [...recentHistoryForGmail]
+      .reverse()
+      .find(
+        (entry) =>
+          entry?.role === "user" &&
+          /\b(?:send|email|mail)\b/i.test(String(entry?.text || ""))
+      );
+
+    if (
+      (!gmailTask || gmailTask?.provider?.id !== "gmail") &&
+      gmailPendingInHistory &&
+      gmailOriginalRequest
+    ) {
+      const originalText = String(gmailOriginalRequest.text || "");
+      const parsedGmail = extractGmailRequest(originalText);
+      const latestEmailMatch = text.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
+      gmailTask = {
+        ...(activeTask || {}),
+        id: activeTask?.id || null,
+        workflowId: activeTask?.workflowId || null,
+        objective: activeTask?.objective || originalText,
+        latestText: text,
+        text,
+        domain: "communications",
+        status: "awaiting_email_confirmation",
+        stage: "email ready",
+        network: "Gmail",
+        provider: { id: "gmail", name: "Gmail" },
+        entities: {
+          ...(activeTask?.entities || {}),
+          recipient:
+            latestEmailMatch?.[0] ||
+            parsedGmail.recipient ||
+            activeTask?.entities?.recipient ||
+            null,
+          subject:
+            activeTask?.entities?.subject ||
+            parsedGmail.subject ||
+            "Message from Fetch",
+          body:
+            activeTask?.entities?.body ||
+            parsedGmail.body ||
+            ""
+        },
+        updatedAt: new Date().toISOString()
+      };
+    }
 
     // Continue a live Instamart task directly when the user has selected
     // a saved delivery address in natural language. This must not fall
