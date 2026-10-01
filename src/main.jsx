@@ -444,26 +444,46 @@ export default function App() {
           .trim();
 
       const requestedAddress = normalizeAddress(text);
-      const match = instamartLive.addresses.find((address) => {
-        const candidates = [
-          address?.label,
-          address?.name,
-          address?.address,
-          address?.formattedAddress,
-          address?.addressLine,
-          address?.addressLine2
-        ].map(normalizeAddress).filter(Boolean);
+      const requestedTokens = new Set(requestedAddress.split(" ").filter(Boolean));
 
-        return candidates.some((candidate) =>
-          requestedAddress === candidate ||
-          requestedAddress.includes(candidate) ||
-          candidate.includes(requestedAddress)
-        );
-      });
+      const match = instamartLive.addresses
+        .map((address) => {
+          const candidates = [
+            address?.label,
+            address?.name,
+            address?.address,
+            address?.formattedAddress,
+            address?.addressLine,
+            address?.addressLine2,
+            address?.city,
+            address?.landmark
+          ].map(normalizeAddress).filter(Boolean);
+
+          let bestScore = 0;
+          for (const candidate of candidates) {
+            const candidateTokens = new Set(candidate.split(" ").filter(Boolean));
+            let overlap = 0;
+            for (const token of requestedTokens) {
+              if (candidateTokens.has(token)) overlap += 1;
+            }
+
+            bestScore = Math.max(
+              bestScore,
+              requestedAddress === candidate ? 1000 :
+              candidate.includes(requestedAddress) ? 800 + requestedAddress.length :
+              requestedAddress.includes(candidate) ? 700 + candidate.length :
+              (overlap / Math.max(1, requestedTokens.size)) * 100
+            );
+          }
+
+          return { address, score: bestScore };
+        })
+        .sort((a, b) => b.score - a.score)[0];
+
+      const matchedAddress = match?.score >= 55 ? match.address : null;
 
       conversationalInstamartAddressId =
-        match?.id || match?.addressId || null;
-    }
+        matchedAddress?.id || matchedAddress?.addressId || null;
 
     setMessages((current) => [
       ...current,
