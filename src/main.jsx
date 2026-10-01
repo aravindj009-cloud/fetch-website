@@ -1888,7 +1888,7 @@ export default function App() {
                               </div>
                             )}
                           </>
-                        ) : instamartLive.productOptions?.length ? (
+                        ) : instamartLive.productOptions?.length && instamartLive.status !== "awaiting_payment" ? (
                           <>
                             {Object.entries(
                               instamartLive.productOptions.reduce((groups, item) => {
@@ -1939,6 +1939,12 @@ export default function App() {
                           </>
                         ) : instamartLive.cart ? (
                           <>
+                            {instamartLive.status === "awaiting_payment" && (
+                              <div className="instamartEmptyState" style={{marginBottom:"12px"}}>
+                                <strong>Payment is required to finish this order</strong>
+                                <span>Fetch has prepared and verified the live cart. The order will not be marked placed until payment succeeds.</span>
+                              </div>
+                            )}
                             <div style={{fontSize:"12px",fontWeight:800}}>Live cart</div>
                             <div style={{fontSize:"11px",opacity:.65,marginTop:"8px"}}>
                               Live cart retrieved from Swiggy. Review the total and payment method below.
