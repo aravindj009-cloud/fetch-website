@@ -1685,10 +1685,11 @@ export default function App() {
   }
 
   function connectPlugin(name) {
+    const conversationId = conversationRef.current;
     const routes = {
-      Swiggy: { url: "/api/fetch/swiggy/connect.mjs", mode: "connect" },
-      Uber: { url: "/api/fetch/uber/connect.mjs", mode: "connect" },
-      Rapido: { url: "https://www.rapido.bike/Home", mode: "open" },
+      Swiggy: { url: "/api/fetch/swiggy/connect.mjs?conversationId=" + encodeURIComponent(conversationId), mode: "connect" },
+      Uber: { url: "/api/fetch/uber/connect.mjs?conversationId=" + encodeURIComponent(conversationId), mode: "connect" },
+      Rapido: { url: null, mode: "pending" },
       Zomato: { url: null, mode: "pending" }
     };
 
@@ -1696,7 +1697,9 @@ export default function App() {
     if (!route) return;
 
     if (route.mode === "pending") {
-      setConnectionNotice("Zomato’s Fetch connector is not available yet. This plugin will be enabled when the live connection is ready.");
+      setConnectionNotice(
+        name + " is not connected to Fetch yet. We will enable this plugin once its live Fetch connector is ready."
+      );
       return;
     }
 
