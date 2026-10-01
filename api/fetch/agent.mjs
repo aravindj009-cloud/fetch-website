@@ -861,6 +861,90 @@ export default async function handler(req, res) {
       ? body.activeTask
       : null;
 
+    // Continue a live Instamart task directly when the user has selected
+    // a saved delivery address in natural language. This must not fall
+    // through to the general conversation model.
+    const suppliedInstamartAddressId = clean(
+      body.suppliedContext?.instamart_address_id ||
+      activeTask?.entities?.addressId
+    );
+
+    if (
+      suppliedInstamartAddressId &&
+      activeTask?.provider?.id === "swiggy_instamart" &&
+      activeTask?.status === "address_selection_required"
+    ) {
+      const swiggyToken = await getSwiggyToken(resolvedConversationId);
+
+      if (!swiggyToken?.access_token) {
+        return json(res, 401, {
+          success: false,
+          status: "connection_required",
+          message: "Your Swiggy connection is no longer available. Please reconnect Swiggy to Fetch."
+        });
+      }
+
+      const entities = activeTask?.entities || {};
+      const execution = await prepareInstamartOrder({
+        accessToken: swiggyToken.access_token,
+        items: Array.isArray(entities?.items) ? entities.items : [],
+        addressId: suppliedInstamartAddressId
+      });
+
+      const liveStatus = execution.status || "provider_ready";
+      const liveMessage =
+        execution.message ||
+        (liveStatus === "awaiting_product_selection"
+          ? "I found the live Instamart matches. Review the products and choose the variants you want."
+          : "I continued your Instamart request.");
+
+      const continuedEntities = {
+        ...entities,
+        addressId: suppliedInstamartAddressId
+      };
+
+      const continuedTask = {
+        ...activeTask,
+        latestText: text,
+        text,
+        entities: continuedEntities,
+        stage:
+          liveStatus === "awaiting_product_selection" ? "products ready" :
+          liveStatus === "awaiting_checkout_confirmation" ? "cart ready for approval" :
+          liveStatus === "order_placed" ? "order placed" : "coordinating",
+        status: liveStatus,
+        network: "Instamart",
+        provider: { id: "swiggy_instamart", name: "Instamart" },
+        lastResponse: liveMessage,
+        updatedAt: new Date().toISOString()
+      };
+
+      return json(res, 200, {
+        success: true,
+        status: liveStatus,
+        workflow_id: activeTask.workflowId || activeTask.id || null,
+        message: liveMessage,
+        active_task: continuedTask,
+        provider: {
+          id: "swiggy_instamart",
+          name: "Instamart",
+          company: "Swiggy",
+          category: "commerce",
+          connection_status: "connected",
+          capabilities: ["grocery_search", "cart", "checkout", "order_tracking"]
+        },
+        execution: {
+          success: !!execution.success,
+          status: liveStatus,
+          message: liveMessage,
+          execution_type: "swiggy_instamart_mcp",
+          side_effect: false,
+          confirmation_required: liveStatus !== "order_placed"
+        },
+        instamart_preview: execution
+      });
+    }
+
     if (
       isActionConfirmation(text) &&
       activeTask?.status === "awaiting_checkout_confirmation" &&
@@ -1246,7 +1330,11 @@ export default async function handler(req, res) {
         const entities = universal?.fetch?.decisions?.[0]?.entities || {};
         const execution = await prepareInstamartOrder({
           accessToken: swiggyToken.access_token,
-          items: Array.isArray(entities?.items) ? entities.items : []
+          items: Array.isArray(entities?.items) ? entities.items : [],
+          addressId: clean(
+            body.suppliedContext?.instamart_address_id ||
+            activeTask?.entities?.addressId
+          )
         });
 
         const liveStatus = execution.status || "provider_ready";
@@ -1266,7 +1354,10 @@ export default async function handler(req, res) {
           text,
           domain: universal?.fetch?.decisions?.[0]?.intent?.domain || "physical_commerce",
           intent: universal?.fetch?.decisions?.[0]?.intent || null,
-          entities,
+          entities: {
+            ...entities,
+            ...(execution?.addressId ? { addressId: execution.addressId } : {})
+          },
           plan: universal?.fetch?.decisions?.[0]?.plan || [],
           stage:
             liveStatus === "address_selection_required" ? "address selection" :
