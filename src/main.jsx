@@ -459,6 +459,23 @@ class FetchErrorBoundary extends React.Component {
   }
 }
 
+function formatRequestedQuantity(option) {
+  const quantity = Number(option?.quantity || 1);
+  const pack = String(option?.pack || "").trim();
+
+  if (!Number.isFinite(quantity)) return "Matches your request";
+
+  const match = pack.match(/(\\d+(?:\\.\\d+)?)\\s*(kg|kgs|g|gram|grams|l|ltr|litre|litres|ml)\\b/i);
+  if (match) {
+    const packQty = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    const total = quantity * packQty;
+    return `${quantity} × ${packQty} ${unit} = ${total} ${unit}`;
+  }
+
+  return `${quantity} × this variant`;
+}
+
 export default function App() {
   const [messages, setMessages] = useState([
     {
@@ -1890,7 +1907,7 @@ export default function App() {
                                         {option.pack ? <span>{option.pack}</span> : null}
                                         {option.price != null ? <span>₹{option.price}</span> : <span>Price unavailable</span>}
                                       </span>
-                                      <span className="instamartProductMatch">For your request: {option.quantity || 1} × this variant</span>
+                                      <span className="instamartProductMatch">For your request: {formatRequestedQuantity(option)}</span>
                                     </span>
                                   </label>
                                 ))}
