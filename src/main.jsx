@@ -524,6 +524,10 @@ export default function App() {
   const [showInstamartConfirmation, setShowInstamartConfirmation] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState(null);
   const [activeNav, setActiveNav] = useState("chat");
+  const [connectedPlugins, setConnectedPlugins] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("fetch_connected_plugins") || "{}"); }
+    catch { return {}; }
+  });
   const [recentChats, setRecentChats] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("fetch_recent_chats") || "[]");
@@ -1569,6 +1573,11 @@ export default function App() {
     }
 
     if (provider) {
+      setConnectedPlugins((current) => {
+        const next = { ...current, [provider]: "connected" };
+        try { localStorage.setItem("fetch_connected_plugins", JSON.stringify(next)); } catch {}
+        return next;
+      });
       setConnectionNotice(provider + " is connected to Fetch. Your next request can use it directly.");
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -1676,8 +1685,32 @@ export default function App() {
   }
 
   function connectPlugin(name) {
-    setActiveNav("chat");
-    send("Connect " + name + " to Fetch");
+    const routes = {
+      Swiggy: { url: "/api/fetch/swiggy/connect.mjs", mode: "connect" },
+      Uber: { url: "/api/fetch/uber/connect.mjs", mode: "connect" },
+      Rapido: { url: "https://www.rapido.bike/Home", mode: "open" },
+      Zomato: { url: null, mode: "pending" }
+    };
+
+    const route = routes[name];
+    if (!route) return;
+
+    if (route.mode === "pending") {
+      setConnectionNotice("Zomato is not connected to Fetch yet. We’ll add its live connector when it is available.");
+      return;
+    }
+
+    if (route.mode === "open") {
+      window.open(route.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    setConnectedPlugins((current) => {
+      const next = { ...current, [name]: "connecting" };
+      try { localStorage.setItem("fetch_connected_plugins", JSON.stringify(next)); } catch {}
+      return next;
+    });
+    window.location.href = route.url;
   }
 
   function selectPartnerCategory(category) {
@@ -1827,13 +1860,19 @@ export default function App() {
               ["Zomato", "Food delivery"],
               ["Uber", "Mobility"],
               ["Rapido", "Bike, auto & cab"]
-            ].map(([name, description]) => (
-              <button className="fetchPluginRow" key={name} onClick={() => connectPlugin(name)}>
-                <span className="fetchPluginIcon">{name.slice(0, 1)}</span>
-                <span><strong>{name}</strong><small>{description}</small></span>
-                <b>Connect</b>
-              </button>
-            ))}
+            ].map(([name, description]) => {
+              const status =
+                connectedPlugins[name] === "connected" ? "Connected" :
+                name === "Zomato" ? "Coming soon" :
+                name === "Rapido" ? "Open" : "Connect";
+              return (
+                <button className="fetchPluginRow" key={name} onClick={() => connectPlugin(name)}>
+                  <span className="fetchPluginIcon">{name.slice(0, 1)}</span>
+                  <span><strong>{name}</strong><small>{description}</small></span>
+                  <b>{status}</b>
+                </button>
+              );
+            })}
           </div>
         )}
 
