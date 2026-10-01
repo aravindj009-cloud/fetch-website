@@ -1858,27 +1858,66 @@ export default function App() {
         )}
 
         {activeNav === "plugins" && (
-          <div className="fetchSidebarPanel">
-            <small className="fetchPanelLabel">CONNECT SERVICES</small>
+          <div className="fetchSidebarPanel fetchPluginMarketplace">
+            <small className="fetchPanelLabel">FETCH CONNECTORS</small>
+            <p className="fetchPluginIntro">Connect the services you already use. Fetch chooses the right one when you ask.</p>
+
             {[
-              ["Swiggy", "Food & grocery"],
-              ["Zomato", "Food delivery"],
-              ["Uber", "Mobility"],
-              ["Rapido", "Bike, auto & cab"],
-              ["Email", "Send & manage email"],
-              ["Calendar", "Schedule & manage events"]
-            ].map(([name, description]) => {
-              const status =
-                connectedPlugins[name] === "connected" ? "Connected" :
-                ["Zomato", "Rapido", "Email", "Calendar"].includes(name) ? "Coming soon" : "Connect";
-              return (
-                <button className="fetchPluginRow" key={name} onClick={() => connectPlugin(name)}>
-                  <span className="fetchPluginIcon">{name.slice(0, 1)}</span>
-                  <span><strong>{name}</strong><small>{description}</small></span>
-                  <b>{status}</b>
-                </button>
-              );
-            })}
+              {
+                category: "🍔 Food & Grocery",
+                items: [
+                  ["Swiggy", "Food & grocery"],
+                  ["Zomato", "Food delivery"],
+                  ["Instamart", "Instant grocery"]
+                ]
+              },
+              {
+                category: "🛍️ Shopping",
+                items: [
+                  ["Amazon", "Everything you need"],
+                  ["Flipkart", "Online shopping"],
+                  ["Myntra", "Fashion & lifestyle"]
+                ]
+              },
+              {
+                category: "✈️ Travel",
+                items: [
+                  ["Booking.com", "Hotels & stays"],
+                  ["Skyscanner", "Flights & travel search"],
+                  ["ixigo", "Flights, trains & buses"]
+                ]
+              },
+              {
+                category: "🚕 Mobility",
+                items: [
+                  ["Uber", "Rides & mobility"],
+                  ["Rapido", "Bike, auto & cab"]
+                ]
+              },
+              {
+                category: "📧 Productivity",
+                items: [
+                  ["Email", "Send & manage email"],
+                  ["Calendar", "Schedule & manage events"]
+                ]
+              }
+            ].map((group) => (
+              <div className="fetchPluginGroup" key={group.category}>
+                <div className="fetchPluginCategory">{group.category}</div>
+                {group.items.map(([name, description]) => {
+                  const status =
+                    connectedPlugins[name] === "connected" ? "Connected" :
+                    ["Swiggy"].includes(name) ? "Connect" : "Coming soon";
+                  return (
+                    <button className="fetchPluginRow" key={name} onClick={() => connectPlugin(name)}>
+                      <span className="fetchPluginIcon">{name === "Booking.com" ? "B" : name === "Skyscanner" ? "S" : name === "ixigo" ? "i" : name.slice(0, 1)}</span>
+                      <span><strong>{name}</strong><small>{description}</small></span>
+                      <b>{status}</b>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         )}
 
