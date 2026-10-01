@@ -870,13 +870,76 @@ export default async function handler(req, res) {
       activeTask?.entities?.addressId
     );
 
+    // If the UI task state was overwritten by a normal conversation turn,
+    // recover the pending Instamart address-selection state from the recent
+    // conversation. This keeps execution state authoritative on the server.
+    const recentHistory = Array.isArray(body.history) ? body.history.slice(-10) : [];
+    const pendingAddressFromHistory = recentHistory.some(
+      (entry) =>
+        entry?.role === "assistant" &&
+        /saved delivery address|which saved delivery address|where should i deliver/i.test(
+          String(entry?.text || "")
+        )
+    );
+
+    let addressSelectionTask = activeTask;
+    if (
+      (!addressSelectionTask ||
+        addressSelectionTask?.status !== "address_selection_required") &&
+      pendingAddressFromHistory
+    ) {
+      const previousUserRequest = [...recentHistory]
+        .reverse()
+        .find(
+          (entry) =>
+            entry?.role === "user" &&
+            String(entry?.text || "").trim() &&
+            String(entry?.text || "").trim() !== text
+        );
+
+      const recoveredItems = [];
+      const previousText = String(previousUserRequest?.text || "");
+      const groceryPatterns = [
+        ["milk", /\bmilk\b/i],
+        ["bread", /\bbread\b/i],
+        ["eggs", /\beggs?\b/i],
+        ["rice", /\brice\b/i],
+        ["biscuits", /\bbiscuits?\b/i],
+        ["water", /\bwater\b/i],
+        ["kitkat", /\bkit\s*kat\b/i],
+        ["munch", /\bmunch\b/i]
+      ];
+      for (const [item, pattern] of groceryPatterns) {
+        if (pattern.test(previousText)) {
+          recoveredItems.push({ item, quantity: 1 });
+        }
+      }
+
+      addressSelectionTask = {
+        ...(activeTask || {}),
+        status: "address_selection_required",
+        provider: {
+          ...(activeTask?.provider || {}),
+          id: "swiggy_instamart",
+          name: "Instamart"
+        },
+        entities: {
+          ...(activeTask?.entities || {}),
+          items:
+            Array.isArray(activeTask?.entities?.items) && activeTask.entities.items.length
+              ? activeTask.entities.items
+              : recoveredItems
+        }
+      };
+    }
+
     // Resolve a typed saved-address response on the server. The browser may
     // not have received the full saved-address list, but the Swiggy token is
     // available here, so Fetch can resolve the user's text to the real ID.
     if (
       !suppliedInstamartAddressId &&
-      activeTask?.provider?.id === "swiggy_instamart" &&
-      activeTask?.status === "address_selection_required"
+      addressSelectionTask?.provider?.id === "swiggy_instamart" &&
+      addressSelectionTask?.status === "address_selection_required"
     ) {
       const swiggyAddressToken = await getSwiggyToken(resolvedConversationId);
       if (swiggyAddressToken?.access_token) {
@@ -901,7 +964,7 @@ export default async function handler(req, res) {
             String(value || "")
               .toLowerCase()
               .replace(/[^a-z0-9]+/g, " ")
-              .replace(/\\s+/g, " ")
+              .replace(/\s+/g, " ")
               .trim();
 
           const requested = normalizeAddress(text);
@@ -955,8 +1018,8 @@ export default async function handler(req, res) {
 
     if (
       suppliedInstamartAddressId &&
-      activeTask?.provider?.id === "swiggy_instamart" &&
-      activeTask?.status === "address_selection_required"
+      addressSelectionTask?.provider?.id === "swiggy_instamart" &&
+      addressSelectionTask?.status === "address_selection_required"
     ) {
       const swiggyToken = await getSwiggyToken(resolvedConversationId);
 
@@ -968,7 +1031,7 @@ export default async function handler(req, res) {
         });
       }
 
-      const entities = activeTask?.entities || {};
+      const entities = addressSelectionTask?.entities || {};
       const execution = await prepareInstamartOrder({
         accessToken: swiggyToken.access_token,
         items: Array.isArray(entities?.items) ? entities.items : [],
@@ -988,7 +1051,7 @@ export default async function handler(req, res) {
       };
 
       const continuedTask = {
-        ...activeTask,
+        ...addressSelectionTask,
         latestText: text,
         text,
         entities: continuedEntities,
@@ -1006,7 +1069,7 @@ export default async function handler(req, res) {
       return json(res, 200, {
         success: true,
         status: liveStatus,
-        workflow_id: activeTask.workflowId || activeTask.id || null,
+        workflow_id: addressSelectionTask.workflowId || addressSelectionTask.id || null,
         message: liveMessage,
         active_task: continuedTask,
         provider: {
