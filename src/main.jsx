@@ -1147,8 +1147,16 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const provider = params.get("uber") === "connected" ? "Uber" : params.get("swiggy") === "connected" ? "Instamart" : null;
+    const returnedConversationId = params.get("conversationId");
+
+    // Restore the exact Fetch conversation that initiated OAuth.
+    if (returnedConversationId) {
+      conversationRef.current = returnedConversationId;
+      localStorage.setItem("fetch_conversation_id", returnedConversationId);
+    }
+
     if (provider) {
-      setConnectionNotice(`${provider} is connected to Fetch. Your next request can use it directly.`);
+      setConnectionNotice(provider + " is connected to Fetch. Your next request can use it directly.");
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
