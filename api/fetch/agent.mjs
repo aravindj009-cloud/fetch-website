@@ -3,7 +3,7 @@ import { atcSafe, atcCreateTaskForOrder, atcSyncTaskFromOrder, atcSelectPartnerS
 import { offerOrderToPartnerStore } from "../../lib/partner-store.mjs";
 import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
 import { getUberToken } from "../../lib/uber-oauth.mjs";
-import { prepareInstamartOrder } from "../../lib/fetch-instamart-execution.mjs";
+import { prepareInstamartOrder, confirmInstamartCheckout } from "../../lib/fetch-instamart-execution.mjs";
 import { prepareUberRide } from "../../lib/uber-ride.mjs";
 import { answerFetchConversation } from "../../lib/fetch-conversation.mjs";
 import { persistFetchWorkflow } from "../../lib/fetch-workflow-store.mjs";
@@ -859,6 +859,77 @@ export default async function handler(req, res) {
     const activeTask = body.activeTask && typeof body.activeTask === "object"
       ? body.activeTask
       : null;
+
+    if (
+      isActionConfirmation(text) &&
+      activeTask?.status === "awaiting_checkout_confirmation" &&
+      activeTask?.provider?.id === "swiggy_instamart"
+    ) {
+      const swiggyToken = await getSwiggyToken(resolvedConversationId);
+      if (!swiggyToken?.access_token) {
+        return json(res, 401, {
+          success: false,
+          status: "connection_required",
+          message: "Your Swiggy connection is no longer available. Please reconnect Swiggy to Fetch."
+        });
+      }
+
+      const paymentMethod = clean(body.suppliedContext?.instamart_payment_method);
+      const intentApp = clean(body.suppliedContext?.instamart_intent_app);
+      if (!paymentMethod) {
+        return json(res, 200, {
+          success: true,
+          status: "awaiting_checkout_confirmation",
+          message: "Your Instamart cart is ready. Tell me which payment method you want to use, then say “place it”.",
+          active_task: activeTask
+        });
+      }
+
+      const checkout = await confirmInstamartCheckout({
+        accessToken: swiggyToken.access_token,
+        addressId: clean(body.suppliedContext?.instamart_address_id || activeTask?.entities?.addressId),
+        paymentMethod,
+        intentApp: intentApp || undefined,
+        confirmed: true
+      });
+
+      const checkoutStatus = checkout.status || (checkout.success ? "order_placed" : "checkout_failed");
+      const checkoutMessage = checkout.message ||
+        (checkoutStatus === "order_placed" ? "Done — your Instamart order has been placed." : "I couldn't complete the Instamart checkout.");
+
+      const checkoutTask = {
+        ...activeTask,
+        status: checkoutStatus,
+        stage: checkoutStatus === "order_placed" ? "order placed" : "cart ready for approval",
+        network: "Instamart",
+        orderId: checkout?.orderId || checkout?.data?.orderId || activeTask?.orderId || null,
+        lastResponse: checkoutMessage,
+        updatedAt: new Date().toISOString()
+      };
+
+      return json(res, checkout.success ? 200 : 400, {
+        success: !!checkout.success,
+        status: checkoutStatus,
+        message: checkoutMessage,
+        active_task: checkoutTask,
+        provider: {
+          id: "swiggy_instamart",
+          name: "Instamart",
+          company: "Swiggy",
+          category: "commerce",
+          connection_status: "connected"
+        },
+        execution: {
+          success: !!checkout.success,
+          status: checkoutStatus,
+          message: checkoutMessage,
+          execution_type: "swiggy_instamart_mcp_checkout",
+          side_effect: checkoutStatus === "order_placed",
+          confirmation_required: false
+        },
+        instamart_preview: checkout
+      });
+    }
 
     if (
       isActionConfirmation(text) &&
