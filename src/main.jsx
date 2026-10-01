@@ -523,6 +523,14 @@ export default function App() {
   const [selectedGenerateUPIQR, setSelectedGenerateUPIQR] = useState(false);
   const [showInstamartConfirmation, setShowInstamartConfirmation] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState(null);
+  const [activeNav, setActiveNav] = useState("chat");
+  const [recentChats, setRecentChats] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("fetch_recent_chats") || "[]");
+    } catch {
+      return [];
+    }
+  });
 
   const activeWatchRef = useRef(null);
   const lastOrderMessageRef = useRef(new Map());
@@ -1629,9 +1637,66 @@ export default function App() {
     recognition.start();
   }
 
+  function saveRecentConversation(conversationId, conversationMessages) {
+    const usable = Array.isArray(conversationMessages)
+      ? conversationMessages.filter((message) => message.role === "user" || message.id === "welcome")
+      : [];
+    const title = usable.find((message) => message.role === "user")?.text || "New Fetch chat";
+    if (!usable.some((message) => message.role === "user")) return;
+
+    const record = {
+      id: conversationId,
+      title: title.slice(0, 72),
+      messages: conversationMessages,
+      updatedAt: Date.now()
+    };
+
+    setRecentChats((current) => {
+      const next = [record, ...current.filter((item) => item.id !== conversationId)].slice(0, 12);
+      try { localStorage.setItem("fetch_recent_chats", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
+
+  function openRecentChat(chat) {
+    if (!chat?.id || !Array.isArray(chat.messages)) return;
+    activeWatchRef.current = null;
+    conversationRef.current = chat.id;
+    try { localStorage.setItem("fetch_conversation_id", chat.id); } catch {}
+    setMessages(chat.messages);
+    setTask(null);
+    setInstamartDemo(null);
+    setInstamartLive(null);
+    setUberLive(null);
+    setSelectedSpins({});
+    setSelectedPayment("");
+    setSelectedIntentApp("");
+    setActiveNav("chat");
+    setInput("");
+  }
+
+  function connectPlugin(name) {
+    setActiveNav("chat");
+    send("Connect " + name + " to Fetch");
+  }
+
+  function selectPartnerCategory(category) {
+    setActiveNav("chat");
+    setInput("Find a " + category.toLowerCase() + " service for me");
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  useEffect(() => {
+    if (messages.some((message) => message.role === "user")) {
+      saveRecentConversation(conversationRef.current, messages);
+    }
+  }, [messages]);
+
   function clearConversation() {
     activeWatchRef.current = null;
     localStorage.removeItem(ACTIVE_ORDER_KEY);
+
+    saveRecentConversation(conversationRef.current, messages);
 
     const newConversation = `web:${makeId()}`;
 
@@ -1711,6 +1776,85 @@ export default function App() {
         .approvalButton:hover { opacity: .88; }
         .approvalButton:disabled { opacity: .5; cursor: default; }
       `}</style>
+
+      <aside className="fetchSidebar">
+        <div className="fetchSidebarBrand">
+          <button className="fetchSidebarLogo" onClick={() => setActiveNav("chat")}>F.</button>
+          <div>
+            <strong>Fetch</strong>
+            <small>Personal assistant</small>
+          </div>
+        </div>
+
+        <button className="fetchNewChat" onClick={() => { clearConversation(); setActiveNav("chat"); }}>
+          <span>＋</span> New chat
+        </button>
+
+        <nav className="fetchNavSection">
+          <button className={activeNav === "chat" ? "active" : ""} onClick={() => setActiveNav("chat")}>
+            <span>⌂</span> Chat
+          </button>
+          <button className={activeNav === "recent" ? "active" : ""} onClick={() => setActiveNav("recent")}>
+            <span>◷</span> Recent chats
+          </button>
+          <button className={activeNav === "plugins" ? "active" : ""} onClick={() => setActiveNav("plugins")}>
+            <span>◈</span> Plugins
+          </button>
+          <button className={activeNav === "partners" ? "active" : ""} onClick={() => setActiveNav("partners")}>
+            <span>⌁</span> Fetch Partners
+          </button>
+        </nav>
+
+        {activeNav === "recent" && (
+          <div className="fetchSidebarPanel">
+            <small className="fetchPanelLabel">RECENT CHATS</small>
+            {recentChats.length ? recentChats.map((chat) => (
+              <button className="fetchRecentChat" key={chat.id} onClick={() => openRecentChat(chat)}>
+                <span>{chat.title}</span>
+                <small>{new Date(chat.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</small>
+              </button>
+            )) : (
+              <p className="fetchEmptyPanel">Your recent conversations will appear here.</p>
+            )}
+          </div>
+        )}
+
+        {activeNav === "plugins" && (
+          <div className="fetchSidebarPanel">
+            <small className="fetchPanelLabel">CONNECT SERVICES</small>
+            {[
+              ["Swiggy", "Food & grocery"],
+              ["Zomato", "Food delivery"],
+              ["Uber", "Mobility"],
+              ["Rapido", "Bike, auto & cab"]
+            ].map(([name, description]) => (
+              <button className="fetchPluginRow" key={name} onClick={() => connectPlugin(name)}>
+                <span className="fetchPluginIcon">{name.slice(0, 1)}</span>
+                <span><strong>{name}</strong><small>{description}</small></span>
+                <b>Connect</b>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {activeNav === "partners" && (
+          <div className="fetchSidebarPanel">
+            <small className="fetchPanelLabel">FETCH PARTNERS</small>
+            {[
+              ["🏪", "Local Commerce", "Grocery, bakery, pharmacy, restaurants"],
+              ["🔧", "Home Services", "Plumber, electrician, AC repair"],
+              ["🚕", "Mobility", "Local taxi & drivers"],
+              ["❤️", "Assisted Services", "Elder care"]
+            ].map(([icon, name, description]) => (
+              <button className="fetchPartnerRow" key={name} onClick={() => selectPartnerCategory(name)}>
+                <span className="fetchPartnerIcon">{icon}</span>
+                <span><strong>{name}</strong><small>{description}</small></span>
+                <b>→</b>
+              </button>
+            ))}
+          </div>
+        )}
+      </aside>
 
       <header>
         <button
