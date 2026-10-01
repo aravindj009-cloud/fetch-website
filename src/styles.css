@@ -956,3 +956,216 @@ aside > p {
   width: 100%;
   margin-top: 2px;
 }
+
+
+/* Fetch product shell */
+.fetchSidebar {
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 248px;
+  z-index: 20;
+  padding: 22px 15px;
+  border: 0 !important;
+  border-right: 1px solid #1111 !important;
+  border-radius: 0 !important;
+  background: rgba(248,248,244,.94) !important;
+  box-shadow: 8px 0 35px #11110808 !important;
+  backdrop-filter: blur(18px);
+  overflow-y: auto !important;
+}
+
+.fetchSidebarBrand {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding: 2px 7px 20px;
+}
+.fetchSidebarLogo {
+  width:34px;
+  height:34px;
+  border:0;
+  border-radius:50%;
+  background:#111;
+  color:#fff;
+  font:700 12px "Space Grotesk";
+}
+.fetchSidebarBrand strong,
+.fetchSidebarBrand small { display:block; }
+.fetchSidebarBrand strong { font:700 15px "Space Grotesk"; }
+.fetchSidebarBrand small { margin-top:2px; font-size:9px; color:#999; }
+
+.fetchNewChat {
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:11px 12px;
+  border:1px solid #1112;
+  border-radius:12px;
+  background:#111;
+  color:#fff;
+  font-size:12px;
+  font-weight:700;
+}
+.fetchNewChat span { font-size:16px; line-height:1; }
+
+.fetchNavSection {
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  margin-top:18px;
+}
+.fetchNavSection button {
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 11px;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:#555;
+  text-align:left;
+  font-size:11px;
+  font-weight:600;
+}
+.fetchNavSection button span {
+  width:19px;
+  text-align:center;
+  font-size:14px;
+}
+.fetchNavSection button:hover,
+.fetchNavSection button.active {
+  background:#11110d0a;
+  color:#111;
+}
+.fetchNavSection button.active { font-weight:750; }
+
+.fetchSidebarPanel {
+  margin-top:18px;
+  padding-top:16px;
+  border-top:1px solid #1111;
+}
+.fetchPanelLabel {
+  display:block;
+  padding:0 8px 9px;
+  color:#999;
+  font-size:8px;
+  font-weight:800;
+  letter-spacing:.15em;
+}
+
+.fetchRecentChat,
+.fetchPluginRow,
+.fetchPartnerRow {
+  width:100%;
+  border:0;
+  background:transparent;
+  text-align:left;
+  border-radius:10px;
+}
+.fetchRecentChat {
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  padding:9px 8px;
+}
+.fetchRecentChat:hover,
+.fetchPluginRow:hover,
+.fetchPartnerRow:hover { background:#11110d08; }
+.fetchRecentChat span {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:10px;
+}
+.fetchRecentChat small { color:#aaa; font-size:8px; }
+
+.fetchPluginRow,
+.fetchPartnerRow {
+  display:grid;
+  grid-template-columns:30px minmax(0,1fr) auto;
+  align-items:center;
+  gap:8px;
+  padding:9px 7px;
+}
+.fetchPluginIcon,
+.fetchPartnerIcon {
+  width:29px;
+  height:29px;
+  display:grid;
+  place-items:center;
+  border:1px solid #1111;
+  border-radius:9px;
+  background:#fff;
+  font-size:11px;
+  font-weight:800;
+}
+.fetchPluginRow > span:nth-child(2),
+.fetchPartnerRow > span:nth-child(2) {
+  min-width:0;
+}
+.fetchPluginRow strong,
+.fetchPluginRow small,
+.fetchPartnerRow strong,
+.fetchPartnerRow small { display:block; }
+.fetchPluginRow strong,
+.fetchPartnerRow strong { font-size:10px; }
+.fetchPluginRow small,
+.fetchPartnerRow small {
+  margin-top:2px;
+  color:#888;
+  font-size:8px;
+  line-height:1.35;
+}
+.fetchPluginRow > b,
+.fetchPartnerRow > b {
+  color:#999;
+  font-size:8px;
+}
+.fetchPluginRow > b { font-weight:600; }
+.fetchEmptyPanel {
+  margin:4px 8px;
+  color:#aaa;
+  font-size:9px;
+  line-height:1.5;
+}
+
+header {
+  margin-left:248px;
+}
+main {
+  margin-left:248px;
+  width:min(1120px, calc(90vw - 0px));
+}
+@media (max-width: 880px) {
+  .fetchSidebar {
+    width: 210px;
+  }
+  header, main { margin-left:210px; }
+  .workspace { grid-template-columns:1fr; }
+}
+@media (max-width: 600px) {
+  .fetchSidebar {
+    position:fixed !important;
+    width:100%;
+    height:auto;
+    bottom:auto;
+    padding:10px 12px;
+    border-right:0 !important;
+    border-bottom:1px solid #1111 !important;
+  }
+  .fetchSidebarBrand { display:none; }
+  .fetchNewChat { width:auto; display:inline-flex; }
+  .fetchNavSection {
+    margin-top:8px;
+    flex-direction:row;
+    overflow-x:auto;
+  }
+  .fetchNavSection button { white-space:nowrap; width:auto; }
+  .fetchSidebarPanel { max-height:260px; overflow:auto; }
+  header { margin-left:0; margin-top:145px; }
+  main { margin-left:0; width:94vw; padding-top:38px; }
+}
