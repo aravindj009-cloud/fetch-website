@@ -1129,11 +1129,63 @@ export default async function handler(req, res) {
           items: Array.isArray(entities?.items) ? entities.items : []
         });
 
+        const liveStatus = execution.status || "provider_ready";
+        const liveMessage =
+          execution.message ||
+          (liveStatus === "address_selection_required"
+            ? "Which saved Swiggy address should I use?"
+            : liveStatus === "awaiting_product_selection"
+              ? "I found the live Instamart matches. Review the products and choose the variants you want."
+              : liveStatus === "awaiting_checkout_confirmation"
+                ? "Your live Instamart cart is ready. Review the total and choose a payment method before I place it."
+                : "I found the requested items on Instamart. Review the available products before I build the cart.");
+        const activeTaskState = {
+          id: universal.workflow_id || null,
+          objective: activeTask?.objective || text,
+          latestText: text,
+          text,
+          domain: universal?.fetch?.decisions?.[0]?.intent?.domain || "physical_commerce",
+          intent: universal?.fetch?.decisions?.[0]?.intent || null,
+          entities,
+          plan: universal?.fetch?.decisions?.[0]?.plan || [],
+          stage:
+            liveStatus === "address_selection_required" ? "address selection" :
+            liveStatus === "awaiting_product_selection" ? "products ready" :
+            liveStatus === "awaiting_checkout_confirmation" ? "cart ready for approval" :
+            liveStatus === "order_placed" ? "order placed" : "coordinating",
+          status: liveStatus,
+          network: "Instamart",
+          workflowId: universal.workflow_id || null,
+          orderId: execution?.orderId || execution?.data?.orderId || null,
+          provider: { id: provider.id, name: provider.name },
+          lastResponse: liveMessage,
+          updatedAt: new Date().toISOString()
+        };
+
+        await persistFetchWorkflow({
+          customerId: clean(body.customerId) || null,
+          conversationId: resolvedConversationId,
+          channel: "web",
+          sourceText: text,
+          universal: {
+            ...universal,
+            status: liveStatus,
+            execution: { ...(universal.execution || {}), ...execution, confirmation_required: liveStatus !== "order_placed" }
+          },
+          activeTask: activeTaskState,
+          eventType:
+            liveStatus === "address_selection_required" ? "instamart_address_selection" :
+            liveStatus === "awaiting_product_selection" ? "instamart_product_selection" :
+            liveStatus === "awaiting_checkout_confirmation" ? "instamart_checkout_confirmation" :
+            liveStatus === "order_placed" ? "instamart_order_placed" : "instamart_provider_ready"
+        });
+
         return json(res, 200, {
           success: true,
-          status: execution.status || "provider_ready",
+          status: liveStatus,
           workflow_id: universal.workflow_id || null,
-          message: execution.message || "I found the requested items on Instamart. Review the available products before I build the cart.",
+          message: liveMessage,
+          active_task: activeTaskState,
           fetch: {
             intent: universal?.fetch?.decisions?.[0]?.intent || null,
             confidence: universal?.fetch?.decisions?.[0]?.intent?.confidence ?? null,
@@ -1146,8 +1198,8 @@ export default async function handler(req, res) {
             capabilities: provider.capabilities, transport: provider.transport, connection_status: "connected", web_url: provider.web_url
           },
           execution: {
-            success: !!execution.success, status: execution.status || null, message: execution.message || null,
-            execution_type: "swiggy_instamart_mcp", side_effect: false, confirmation_required: execution.status !== "order_placed"
+            success: !!execution.success, status: liveStatus, message: liveMessage,
+            execution_type: "swiggy_instamart_mcp", side_effect: liveStatus === "order_placed", confirmation_required: liveStatus !== "order_placed"
           },
           instamart_preview: execution
         });
