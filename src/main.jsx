@@ -484,6 +484,7 @@ export default function App() {
 
       conversationalInstamartAddressId =
         matchedAddress?.id || matchedAddress?.addressId || null;
+    }
 
     setMessages((current) => [
       ...current,
