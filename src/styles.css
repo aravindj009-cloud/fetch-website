@@ -641,3 +641,31 @@ aside > p {
 .fetchOptionButton strong{font-size:13px}
 .fetchOptionButton small{font-size:10px;opacity:.58;line-height:1.35}
 .fetchOptionButton>b{font-size:11px;white-space:nowrap}
+
+
+/* Instamart live workflow — aligned address cards and explicit states */
+.instamartLiveCard { width:100%; max-width:100%; overflow:hidden; }
+.instamartSectionTitle { margin:12px 0 9px; font-size:12px; line-height:1.35; font-weight:800; }
+.instamartAddressList { display:flex; flex-direction:column; gap:8px; width:100%; }
+.instamartAddressButton {
+  appearance:none; width:100%; min-width:0; margin:0; padding:11px 12px;
+  display:flex; align-items:center; gap:12px; border:1px solid #1111;
+  border-radius:12px; background:#f6f6f4; color:#111; text-align:left;
+}
+.instamartAddressButton:hover { background:#f0f0ed; border-color:#1113; }
+.instamartAddressButton:disabled { opacity:.55; cursor:default; }
+.instamartAddressText { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.instamartAddressText strong { display:block; font-size:11px; line-height:1.25; }
+.instamartAddressText small { display:block; font-size:10px; line-height:1.4; color:#777; overflow-wrap:anywhere; }
+.instamartAddressArrow { flex:0 0 auto; width:24px; text-align:center; color:#777; font-size:13px; }
+.instamartEmptyState, .instamartLoadingState { margin-top:10px; padding:13px; border:1px solid #1111; border-radius:12px; background:#fafaf8; }
+.instamartEmptyState { display:flex; flex-direction:column; gap:5px; }
+.instamartEmptyState strong { font-size:12px; }
+.instamartEmptyState span, .instamartEmptyState small { font-size:10px; line-height:1.45; color:#777; }
+.instamartLoadingState { display:flex; align-items:center; gap:8px; font-size:11px; color:#777; }
+.instamartSpinner { width:13px; height:13px; flex:0 0 13px; border:1.5px solid #ddd; border-top-color:#111; border-radius:50%; animation:instamartSpin .8s linear infinite; }
+@keyframes instamartSpin { to { transform:rotate(360deg); } }
+@media (max-width:600px) {
+  .providerConnectCard { flex-direction:column; }
+  .providerConnectCard .approvalButton { width:100%; min-width:0; }
+}
