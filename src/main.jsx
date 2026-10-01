@@ -1192,16 +1192,29 @@ export default function App() {
         }]);
       } else {
         const orderId = data?.data?.orderId || data?.orderId || data?.order?.orderId || null;
-        setTask((current) => ({ ...(current || {}), stage: "order placed", status: data.status, network: "Instamart", orderId }));
-        setMessages((current) => [...current, {
-          id: makeId(),
-          role: "assistant",
-          text: data?.message || "Instamart order placed successfully.",
-          meta: { status: data.status, network: "Instamart" }
-        }]);
-        if (orderId) {
-          setInstamartLive((current) => ({ ...(current || {}), orderId }));
-          void refreshInstamartTracking(orderId);
+        const pendingPayment = data.status === "awaiting_payment" || String(data?.data?.status || "").toUpperCase() === "PENDING_PAYMENT";
+
+        if (pendingPayment) {
+          setTask((current) => ({ ...(current || {}), stage: "payment pending", status: data.status, network: "Instamart", orderId }));
+          setInstamartLive((current) => ({ ...(current || {}), payment: data.payment || data.data, orderId }));
+          setMessages((current) => [...current, {
+            id: makeId(),
+            role: "assistant",
+            text: "Your Instamart order is ready for payment. Complete the payment below; Fetch will only mark the order complete after payment succeeds.",
+            meta: { status: data.status, network: "Instamart" }
+          }]);
+        } else {
+          setTask((current) => ({ ...(current || {}), stage: "order placed", status: data.status, network: "Instamart", orderId }));
+          setMessages((current) => [...current, {
+            id: makeId(),
+            role: "assistant",
+            text: data?.message || "Instamart order placed successfully.",
+            meta: { status: data.status, network: "Instamart" }
+          }]);
+          if (orderId) {
+            setInstamartLive((current) => ({ ...(current || {}), orderId }));
+            void refreshInstamartTracking(orderId);
+          }
         }
       }
     } catch (error) {
