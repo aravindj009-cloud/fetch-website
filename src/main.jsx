@@ -82,6 +82,18 @@ function getSwiggyConnectionState() {
 }
 
 function getConversationId() {
+  // OAuth returns to Fetch with the exact conversation that initiated the
+  // connection. Prefer that value over any stale localStorage value.
+  try {
+    const returned = new URLSearchParams(window.location.search).get("conversationId");
+    if (returned) {
+      localStorage.setItem("fetch_conversation_id", returned);
+      return returned;
+    }
+  } catch {
+    // Fall through to the persisted conversation.
+  }
+
   const existing = localStorage.getItem("fetch_conversation_id");
 
   if (existing) {
