@@ -4,7 +4,7 @@ import { offerOrderToPartnerStore } from "../../lib/partner-store.mjs";
 import { getProvider } from "../../lib/fetch-provider-registry.mjs";
 import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
 import { getUberToken } from "../../lib/uber-oauth.mjs";
-import { getGmailToken } from "../../lib/gmail-oauth.mjs";
+import { getGmailToken, getGmailProfile, sendGmailEmail } from "../../lib/gmail-oauth.mjs";
 import { prepareInstamartOrder, confirmInstamartCheckout } from "../../lib/fetch-instamart-execution.mjs";
 import { getAddresses as getSwiggyAddresses } from "../../lib/swiggy-instamart-mcp.mjs";
 import { prepareUberRide } from "../../lib/uber-ride.mjs";
@@ -1117,6 +1117,96 @@ export default async function handler(req, res) {
 
     if (
       isActionConfirmation(text) &&
+      activeTask?.provider?.id === "gmail" &&
+      activeTask?.status === "awaiting_email_confirmation"
+    ) {
+      const token = await getGmailToken(resolvedConversationId);
+      if (!token?.access_token) {
+        return json(res, 401, {
+          success: false,
+          status: "connection_required",
+          message: "Your Gmail connection is no longer available. Please reconnect Gmail to Fetch."
+        });
+      }
+
+      try {
+        const email = activeTask?.entities || {};
+        let recipient = clean(email.recipient);
+        if (recipient === "self" || !recipient) {
+          const profile = await getGmailProfile(token.access_token);
+          recipient = clean(profile?.emailAddress);
+        }
+
+        if (!recipient || !email.body) {
+          return json(res, 200, {
+            success: true,
+            status: "needs_clarification",
+            message: !recipient
+              ? "Who should I send the email to?"
+              : "What would you like the email to say?",
+            active_task: activeTask
+          });
+        }
+
+        const sent = await sendGmailEmail(token.access_token, {
+          to: recipient,
+          subject: clean(email.subject) || "Message from Fetch",
+          body: email.body
+        });
+
+        const message = "Done — I sent the email through Gmail.";
+        const completedTask = {
+          ...activeTask,
+          latestText: text,
+          text,
+          status: "completed",
+          stage: "email sent",
+          network: "Gmail",
+          lastResponse: message,
+          updatedAt: new Date().toISOString()
+        };
+
+        return json(res, 200, {
+          success: true,
+          status: "completed",
+          workflow_id: activeTask.workflowId || activeTask.id || null,
+          message,
+          active_task: completedTask,
+          provider: {
+            id: "gmail",
+            name: "Gmail",
+            company: "Google",
+            category: "productivity",
+            connection_status: "connected",
+            capabilities: ["email_search", "email_read", "email_draft", "email_send"]
+          },
+          execution: {
+            success: true,
+            status: "completed",
+            message,
+            execution_type: "gmail_send",
+            side_effect: true,
+            confirmation_required: false
+          },
+          gmail: {
+            to: recipient,
+            subject: clean(email.subject) || "Message from Fetch",
+            message_id: sent.messageId || null,
+            thread_id: sent.threadId || null
+          }
+        });
+      } catch (error) {
+        console.error("FETCH GMAIL SEND ERROR", error);
+        return json(res, 400, {
+          success: false,
+          status: "send_failed",
+          message: error?.message || "I couldn't send the email."
+        });
+      }
+    }
+
+    if (
+      isActionConfirmation(text) &&
       activeTask?.provider?.id === "swiggy_instamart" &&
       activeTask?.entities?.addressId &&
       activeTask?.status !== "awaiting_checkout_confirmation"
@@ -1506,6 +1596,162 @@ export default async function handler(req, res) {
 
       const provider = universal.provider;
       const providerExecution = universal.execution || {};
+
+      if (
+        provider.id === "gmail" &&
+        gmailToken?.access_token &&
+        body.suppliedContext?.local_demo !== true
+      ) {
+        const parsed = extractGmailRequest(text);
+        let recipient = parsed.recipient;
+        if (recipient === "self") {
+          try {
+            const profile = await getGmailProfile(gmailToken.access_token);
+            recipient = clean(profile?.emailAddress) || "self";
+          } catch (error) {
+            console.error("FETCH GMAIL PROFILE ERROR", error);
+          }
+        }
+
+        if (!recipient) {
+          return json(res, 200, {
+            success: true,
+            status: "needs_clarification",
+            workflow_id: universal.workflow_id || null,
+            message: "Who should I send the email to?",
+            provider: {
+              id: provider.id,
+              name: provider.name,
+              company: provider.company,
+              category: provider.category,
+              capabilities: provider.capabilities,
+              transport: provider.transport,
+              connection_status: "connected"
+            },
+            execution: {
+              success: false,
+              status: "needs_clarification",
+              message: "Who should I send the email to?",
+              execution_type: "gmail_send",
+              side_effect: false,
+              confirmation_required: true
+            }
+          });
+        }
+
+        if (!parsed.body) {
+          return json(res, 200, {
+            success: true,
+            status: "needs_clarification",
+            workflow_id: universal.workflow_id || null,
+            message: "What would you like the email to say?",
+            provider: {
+              id: provider.id,
+              name: provider.name,
+              company: provider.company,
+              category: provider.category,
+              capabilities: provider.capabilities,
+              transport: provider.transport,
+              connection_status: "connected"
+            },
+            execution: {
+              success: false,
+              status: "needs_clarification",
+              message: "What would you like the email to say?",
+              execution_type: "gmail_send",
+              side_effect: false,
+              confirmation_required: true
+            }
+          });
+        }
+
+        const subject = clean(parsed.subject) || "Message from Fetch";
+        const previewRecipient = recipient === "self" ? "yourself" : recipient;
+        const message = `I’m ready to send this email to ${previewRecipient}. Shall I send it?`;
+
+        const activeTaskState = {
+          id: universal.workflow_id || null,
+          objective: activeTask?.objective || text,
+          latestText: text,
+          text,
+          domain: "communications",
+          intent: universal?.fetch?.decisions?.[0]?.intent || null,
+          entities: {
+            recipient,
+            subject,
+            body: parsed.body
+          },
+          plan: universal?.fetch?.decisions?.[0]?.plan || [],
+          stage: "email ready",
+          status: "awaiting_email_confirmation",
+          network: "Gmail",
+          workflowId: universal.workflow_id || null,
+          orderId: null,
+          provider: { id: "gmail", name: "Gmail" },
+          lastResponse: message,
+          options: [],
+          updatedAt: new Date().toISOString()
+        };
+
+        await persistFetchWorkflow({
+          customerId: clean(body.customerId) || null,
+          conversationId: resolvedConversationId,
+          channel: "web",
+          sourceText: text,
+          universal: {
+            ...universal,
+            status: "awaiting_email_confirmation",
+            execution: {
+              ...(universal.execution || {}),
+              success: false,
+              status: "awaiting_email_confirmation",
+              message,
+              execution_type: "gmail_send",
+              side_effect: false,
+              confirmation_required: true
+            }
+          },
+          activeTask: activeTaskState,
+          eventType: "gmail_send_confirmation"
+        });
+
+        return json(res, 200, {
+          success: true,
+          status: "awaiting_email_confirmation",
+          workflow_id: universal.workflow_id || null,
+          message,
+          active_task: activeTaskState,
+          fetch: {
+            intent: universal?.fetch?.decisions?.[0]?.intent || null,
+            confidence: universal?.fetch?.decisions?.[0]?.intent?.confidence ?? null,
+            entities: activeTaskState.entities,
+            plan: universal?.fetch?.decisions?.[0]?.plan || null
+          },
+          atc: universal.atc || null,
+          provider: {
+            id: "gmail",
+            name: "Gmail",
+            company: "Google",
+            category: "productivity",
+            capabilities: provider.capabilities,
+            transport: provider.transport,
+            connection_status: "connected"
+          },
+          execution: {
+            success: false,
+            status: "awaiting_email_confirmation",
+            message,
+            execution_type: "gmail_send",
+            side_effect: false,
+            confirmation_required: true
+          },
+          gmail: {
+            to: recipient,
+            subject,
+            body: parsed.body
+          }
+        });
+      }
 
       if (
         provider.id === "uber" &&
