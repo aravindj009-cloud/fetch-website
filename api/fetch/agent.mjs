@@ -1,6 +1,7 @@
 import { executeUniversalFetchRequest } from "../../lib/fetch-universal-execution.mjs";
 import { atcSafe, atcCreateTaskForOrder, atcSyncTaskFromOrder, atcSelectPartnerStoreForOrder, atcSelectResourceForOrder, atcRecordAssignment, atcRecordEvent } from "../../lib/atc.mjs";
 import { offerOrderToPartnerStore } from "../../lib/partner-store.mjs";
+import { getProvider } from "../../lib/fetch-provider-registry.mjs";
 import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
 import { getUberToken } from "../../lib/uber-oauth.mjs";
 import { prepareInstamartOrder, confirmInstamartCheckout } from "../../lib/fetch-instamart-execution.mjs";
@@ -999,6 +1000,54 @@ export default async function handler(req, res) {
       activeTask,
       eventType: "request_received"
     });
+
+    /*
+     * Hard ATC guardrail:
+     * For a grocery/commerce request, Instamart is the connector path when
+     * the request contains recognizable grocery items. This prevents the
+     * legacy local-store engine from silently taking over before connector
+     * routing has had a chance to execute.
+     */
+    if (
+      !universal?.provider?.id &&
+      universal?.fetch?.decisions?.[0]?.intent?.domain === "physical_commerce" &&
+      Array.isArray(universal?.fetch?.decisions?.[0]?.entities?.items) &&
+      universal.fetch.decisions[0].entities.items.length
+    ) {
+      const instamartProvider = getProvider("swiggy_instamart");
+      const swiggyAccessToken = swiggyToken?.access_token || null;
+      const forcedStatus = swiggyAccessToken ? "connected" : "connection_required";
+
+      universal.provider = {
+        id: instamartProvider.id,
+        name: instamartProvider.name,
+        company: instamartProvider.company,
+        category: instamartProvider.category,
+        capabilities: instamartProvider.capabilities,
+        transport: instamartProvider.transport,
+        connection_status: forcedStatus,
+        connect_path: instamartProvider.connect_path,
+        auth: instamartProvider.auth,
+        web_url: instamartProvider.web_url
+      };
+      universal.atc = {
+        status: "provider_selected",
+        network: instamartProvider.category,
+        resource_type: "connected_app",
+        provider_id: instamartProvider.id,
+        provider_name: instamartProvider.name,
+        provider_company: instamartProvider.company,
+        provider_transport: instamartProvider.transport,
+        connection_status: forcedStatus,
+        reason: "grocery_connector_priority",
+        confidence: 0.92,
+        confirmation_required: true,
+        capabilities: instamartProvider.capabilities
+      };
+      universal.status = forcedStatus === "connected"
+        ? "provider_ready"
+        : "provider_connection_required";
+    }
 
     /*
      * Provider-first ATC:
