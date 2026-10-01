@@ -66,6 +66,24 @@ function isActionConfirmation(text) {
     .test(clean(text).replace(/[.!]+$/, ""));
 }
 
+function extractGmailRequest(text) {
+  const value = clean(text).replace(/[“”"]/g, "");
+  const toMatch = value.match(/\b(?:to|email)\s+([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i);
+  const selfMatch = /\bto\s+(?:myself|me)\b/i.test(value);
+  const subjectMatch = value.match(/\bsubject\s*[:=-]?\s*(.+?)(?=\s+(?:saying|that says|with the message)\b|$)/i);
+  const bodyMatch =
+    value.match(/\b(?:saying|that says|with the message)\s+(.+)$/i) ||
+    value.match(/\b(?:message|body)\s*[:=-]\s*(.+)$/i);
+
+  return {
+    recipient: toMatch ? clean(toMatch[1]) : (selfMatch ? "self" : null),
+    subject: clean(subjectMatch?.[1]) || "Message from Fetch",
+    body: clean(bodyMatch?.[1] || "")
+      .replace(/^[:,-]\s*/, "")
+      .replace(/[.!]+$/, "")
+  };
+}
+
 function isExecutionRequest(universal) {
   const domain = clean(universal?.fetch?.decisions?.[0]?.intent?.domain);
   return [
