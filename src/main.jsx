@@ -509,6 +509,7 @@ export default function App() {
   const [selectedSpins, setSelectedSpins] = useState({});
   const [selectedPayment, setSelectedPayment] = useState("");
   const [selectedIntentApp, setSelectedIntentApp] = useState("");
+  const [selectedGenerateUPIQR, setSelectedGenerateUPIQR] = useState(false);
   const [showInstamartConfirmation, setShowInstamartConfirmation] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState(null);
 
@@ -1182,8 +1183,19 @@ export default function App() {
           conversationId: conversationRef.current,
           addressId: instamartLive.addressId,
           paymentMethod: selectedPayment,
-          ...(selectedPayment === "UPI" && selectedIntentApp ? { intentApp: selectedIntentApp } : {}),
+          ...(selectedPayment === "UPI" && selectedIntentApp && !selectedGenerateUPIQR ? { intentApp: selectedIntentApp } : {}),
+          ...(selectedPayment === "UPI" && selectedGenerateUPIQR ? { generateUPIQR: true } : {}),
           confirmed: true
+        };
+      } else if (action === "payment_status") {
+        const payment = instamartLive?.payment || {};
+        const paasId = payment?.paasId || payment?.data?.paasId;
+        if (!paasId) throw new Error("I don't have a valid payment reference yet. Please start payment again.");
+        payload = {
+          action: "payment_status",
+          conversationId: conversationRef.current,
+          paasId,
+          orderId: payment?.orderId || instamartLive?.orderId || payment?.data?.orderId || undefined
         };
       } else {
         throw new Error("Unknown Instamart action.");
@@ -1213,13 +1225,19 @@ export default function App() {
         const orderId = data?.data?.orderId || data?.orderId || data?.order?.orderId || null;
         const pendingPayment = data.status === "awaiting_payment" || String(data?.data?.status || "").toUpperCase() === "PENDING_PAYMENT";
 
-        if (pendingPayment) {
+        if (action === "payment_status" && data.status === "payment_failed") {
+          setTask((current) => ({ ...(current || {}), stage: "payment failed", status: data.status, network: "Instamart" }));
+          setInstamartLive((current) => ({ ...(current || {}), status: "awaiting_checkout_confirmation", payment: null }));
+          addAssistantMessage("The payment didn’t go through. Your order has not been placed. Choose another payment method and try again.", { status: "payment_failed", network: "Instamart" });
+        } else if (pendingPayment) {
           setTask((current) => ({ ...(current || {}), stage: "payment pending", status: data.status, network: "Instamart", orderId }));
           setInstamartLive((current) => ({ ...(current || {}), payment: data.payment || data.data, orderId }));
-          addAssistantMessage(
-            "Your order is ready for payment. Complete the payment below; Fetch will only mark it placed after payment succeeds.",
-            { status: data.status, network: "Instamart" }
-          );
+          addAssistantMessage("Your order is ready for payment. Complete the payment below; Fetch will only mark it placed after payment succeeds.", { status: data.status, network: "Instamart" });
+        } else if (action === "payment_status" && data.status === "order_placed") {
+          setTask((current) => ({ ...(current || {}), stage: "order placed", status: data.status, network: "Instamart", orderId }));
+          setInstamartLive((current) => ({ ...(current || {}), status: "order_placed", orderId, payment: data.payment || data.data }));
+          addAssistantMessage("Payment received. Your Instamart order is confirmed.", { status: "order_placed", network: "Instamart" });
+          if (orderId) void refreshInstamartTracking(orderId);
         } else {
           setTask((current) => ({ ...(current || {}), stage: "order placed", status: data.status, network: "Instamart", orderId }));
           setMessages((current) => [...current, {
