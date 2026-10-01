@@ -604,7 +604,7 @@ export default function App() {
             addressId: conversationalInstamartAddressId,
             items: (instamartLive?.requestedItems || []).map((item) => ({
               item: item.item || item.name,
-              quantity: item.quantity || 1
+              quantity: item.quantity || 1,\n            unit: item.unit || null,\n            unit: item.unit || null
             }))
           })
         });
@@ -1085,7 +1085,7 @@ export default function App() {
           addressId,
           items: (instamartLive?.requestedItems || []).map((item) => ({
             item: item.item || item.name,
-            quantity: item.quantity || 1
+            quantity: item.quantity || 1,\n            unit: item.unit || null
           }))
         })
       });
