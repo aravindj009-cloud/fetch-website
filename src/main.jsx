@@ -82,26 +82,38 @@ function getSwiggyConnectionState() {
 }
 
 function getConversationId() {
-  // OAuth returns to Fetch with the exact conversation that initiated the
-  // connection. Prefer that value over any stale localStorage value.
+  // This function runs during the initial React render. Nothing here should
+  // ever be able to crash the entire application (for example when browser
+  // storage is blocked, unavailable, or full).
   try {
     const returned = new URLSearchParams(window.location.search).get("conversationId");
+
     if (returned) {
-      localStorage.setItem("fetch_conversation_id", returned);
+      try {
+        localStorage.setItem("fetch_conversation_id", returned);
+      } catch {
+        // Storage is optional; the conversation can still run in memory.
+      }
       return returned;
     }
+
+    try {
+      const existing = localStorage.getItem("fetch_conversation_id");
+      if (existing) return existing;
+    } catch {
+      // Continue with an in-memory conversation id.
+    }
   } catch {
-    // Fall through to the persisted conversation.
-  }
-
-  const existing = localStorage.getItem("fetch_conversation_id");
-
-  if (existing) {
-    return existing;
+    // Continue with an in-memory conversation id.
   }
 
   const created = `web:${makeId()}`;
-  localStorage.setItem("fetch_conversation_id", created);
+
+  try {
+    localStorage.setItem("fetch_conversation_id", created);
+  } catch {
+    // Storage is optional.
+  }
 
   return created;
 }
@@ -390,6 +402,61 @@ function ResearchResults({ text }) {
       </div>
     </div>
   );
+}
+
+class FetchErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error("FETCH CLIENT RENDER ERROR", error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      const message = this.state.error?.message || "Fetch could not load the application.";
+      return (
+        <div style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: "32px",
+          fontFamily: "Inter, system-ui, sans-serif",
+          background: "#f7f7f4",
+          color: "#111"
+        }}>
+          <div style={{ maxWidth: "640px" }}>
+            <div style={{ fontSize: "13px", letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.55 }}>
+              FETCH · CLIENT ERROR
+            </div>
+            <h1 style={{ fontSize: "36px", margin: "12px 0" }}>
+              Fetch hit a browser-side error.
+            </h1>
+            <p style={{ lineHeight: 1.6, opacity: 0.75 }}>
+              The application did not silently fail. Refresh once and, if this
+              remains, send this error to the Fetch team:
+            </p>
+            <pre style={{
+              whiteSpace: "pre-wrap",
+              padding: "16px",
+              borderRadius: "12px",
+              background: "#fff",
+              border: "1px solid #ddd",
+              overflowX: "auto"
+            }}>{message}</pre>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 export default function App() {
@@ -2288,4 +2355,8 @@ export default function App() {
 
 createRoot(
   document.getElementById("root")
-).render(<App />);
+).render(
+  <FetchErrorBoundary>
+    <App />
+  </FetchErrorBoundary>
+);
