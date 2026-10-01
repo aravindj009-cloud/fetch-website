@@ -2046,33 +2046,94 @@ export default function App() {
                               </div>
                             )}
 
+                            {instamartLive.status === "awaiting_payment" && instamartLive.payment && (
+                              <div className="fetchPaymentStatusCard">
+                                <strong>Payment is waiting for you</strong>
+                                <span>Complete the payment below. Fetch will confirm the order only after payment succeeds.</span>
+                                {instamartLive.payment?.upiIntentUrl && (
+                                  <a
+                                    href={instamartLive.payment.upiIntentUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="approvalButton"
+                                    style={{display:"block",textAlign:"center",textDecoration:"none",marginTop:"10px"}}
+                                  >
+                                    Open UPI payment
+                                  </a>
+                                )}
+                                {instamartLive.payment?.isQrFlow && (
+                                  <div className="fetchPaymentQrHint">
+                                    Scan the UPI QR provided by the payment flow to complete payment.
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  className="approvalButton fetchPaymentCheckButton"
+                                  onClick={() => runInstamartLiveAction("payment_status")}
+                                  disabled={busy}
+                                >
+                                  I’ve paid — check my order
+                                </button>
+                              </div>
+                            )}
+
                             <div className="paymentBox">
                               <strong style={{fontSize:"11px"}}>How would you like to pay?</strong>
                               {getInstamartPaymentMethods(instamartLive.paymentOptions, instamartLive.cart).length ? (
-                                getInstamartPaymentMethods(instamartLive.paymentOptions, instamartLive.cart).map((method) => {
-                                  const group = method?.groupName || method?.id;
-                                  const isUpi = group === "UPI";
-                                  return (
-                                    <div key={method.id || group} style={{padding:"6px 0"}}>
-                                      <label>
+                                <>
+                                  {getInstamartPaymentMethods(instamartLive.paymentOptions, instamartLive.cart).map((method) => {
+                                    const group = String(method?.groupName || method?.id || "");
+                                    const isUpi = group.toUpperCase() === "UPI";
+                                    return (
+                                      <label className="fetchPaymentChoice" key={method.id || group}>
                                         <input
                                           type="radio"
                                           name="fetch-payment"
                                           value={group}
-                                          checked={selectedPayment === group && (!isUpi || !selectedIntentApp || selectedIntentApp === method.id)}
+                                          checked={selectedPayment === group && (!isUpi || (!selectedGenerateUPIQR && selectedIntentApp === method.id))}
                                           onChange={() => {
                                             setSelectedPayment(group);
-                                            if (isUpi) setSelectedIntentApp(method.id);
-                                            else setSelectedIntentApp("");
+                                            if (isUpi) {
+                                              setSelectedIntentApp(method.id || "");
+                                              setSelectedGenerateUPIQR(false);
+                                            } else {
+                                              setSelectedIntentApp("");
+                                              setSelectedGenerateUPIQR(false);
+                                            }
                                           }}
                                         />
-                                        <span>{method.displayName || (group === "UPI" ? "UPI" : group === "Cash" || group === "COD" ? "Cash on delivery" : group)}</span>
+                                        <span>
+                                          <strong>{method.displayName || (isUpi ? "UPI" : group === "Cash" || group === "COD" ? "Cash on delivery" : group)}</strong>
+                                          <small>{isUpi ? "Pay securely with UPI" : "Use the payment method available for this order"}</small>
+                                        </span>
                                       </label>
-                                    </div>
-                                  );
-                                })
+                                    );
+                                  })}
+                                  {getInstamartPaymentMethods(instamartLive.paymentOptions, instamartLive.cart).some((method) => String(method?.groupName || method?.id || "").toUpperCase() === "UPI") && (
+                                    <label className="fetchPaymentChoice">
+                                      <input
+                                        type="radio"
+                                        name="fetch-payment"
+                                        value="UPI-QR"
+                                        checked={selectedPayment === "UPI" && selectedGenerateUPIQR}
+                                        onChange={() => {
+                                          setSelectedPayment("UPI");
+                                          setSelectedIntentApp("");
+                                          setSelectedGenerateUPIQR(true);
+                                        }}
+                                      />
+                                      <span>
+                                        <strong>Scan UPI QR</strong>
+                                        <small>Best option on desktop</small>
+                                      </span>
+                                    </label>
+                                  )}
+                                </>
                               ) : (
-                                <div style={{fontSize:"11px",opacity:.6}}>No live payment methods were returned. Refresh the cart before checkout.</div>
+                                <div className="instamartEmptyState">
+                                  <strong>Payment options unavailable</strong>
+                                  <span>Fetch couldn't retrieve the live payment methods for this cart. The order has not been placed.</span>
+                                </div>
                               )}
                             </div>
 
