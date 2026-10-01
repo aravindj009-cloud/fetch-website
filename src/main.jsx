@@ -1183,6 +1183,16 @@ export default function App() {
           ...(selectedPayment === "UPI" && selectedIntentApp ? { intentApp: selectedIntentApp } : {}),
           confirmed: true
         };
+      } else if (action === "payment_status") {
+        const payment = instamartLive.payment || instamartLive.data || {};
+        const paasId = payment?.paasId || payment?.data?.paasId;
+        if (!paasId) throw new Error("The payment reference is not available yet. Start the payment again.");
+        payload = {
+          action: "payment_status",
+          conversationId: conversationRef.current,
+          paasId,
+          orderId: payment?.orderId || instamartLive.orderId || payment?.data?.orderId || undefined
+        };
       } else {
         throw new Error("Unknown Instamart action.");
       }
@@ -1213,15 +1223,24 @@ export default function App() {
         const orderId = data?.data?.orderId || data?.orderId || data?.order?.orderId || null;
         const pendingPayment = data.status === "awaiting_payment" || String(data?.data?.status || "").toUpperCase() === "PENDING_PAYMENT";
 
-        if (pendingPayment) {
+        if (pendingPayment || action === "payment_status" && data.status === "awaiting_payment") {
           setTask((current) => ({ ...(current || {}), stage: "payment pending", status: data.status, network: "Instamart", orderId }));
-          setMessages((current) => [...current, {
-            id: makeId(),
-            role: "assistant",
-            text: "Your Instamart order is ready for payment. Complete the payment below; Fetch will only mark the order complete after payment succeeds.",
-            meta: { status: data.status, network: "Instamart" }
-          }]);
-          setInstamartLive((current) => ({ ...(current || {}), payment: data.payment || data.data, orderId }));
+          setInstamartLive((current) => ({ ...(current || {}), payment: data.payment || data.data || current?.payment, orderId }));
+          if (action === "payment_status") {
+            setMessages((current) => [...current, {
+              id: makeId(),
+              role: "assistant",
+              text: data?.message || "Payment is still processing. I’ll keep the order unconfirmed until payment succeeds.",
+              meta: { status: data.status, network: "Instamart" }
+            }]);
+          } else {
+            setMessages((current) => [...current, {
+              id: makeId(),
+              role: "assistant",
+              text: "Your Instamart order is ready for payment. Complete the payment below; Fetch will only mark the order complete after payment succeeds.",
+              meta: { status: data.status, network: "Instamart" }
+            }]);
+          }
         } else {
           setTask((current) => ({ ...(current || {}), stage: "order placed", status: data.status, network: "Instamart", orderId }));
           setMessages((current) => [...current, {
