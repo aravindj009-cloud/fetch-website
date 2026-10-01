@@ -5,6 +5,7 @@ import { getProvider } from "../../lib/fetch-provider-registry.mjs";
 import { getSwiggyToken } from "../../lib/swiggy-oauth-v2.mjs";
 import { getUberToken } from "../../lib/uber-oauth.mjs";
 import { prepareInstamartOrder, confirmInstamartCheckout } from "../../lib/fetch-instamart-execution.mjs";
+import { getAddresses as getSwiggyAddresses } from "../../lib/swiggy-instamart-mcp.mjs";
 import { prepareUberRide } from "../../lib/uber-ride.mjs";
 import { answerFetchConversation } from "../../lib/fetch-conversation.mjs";
 import { persistFetchWorkflow } from "../../lib/fetch-workflow-store.mjs";
@@ -864,10 +865,93 @@ export default async function handler(req, res) {
     // Continue a live Instamart task directly when the user has selected
     // a saved delivery address in natural language. This must not fall
     // through to the general conversation model.
-    const suppliedInstamartAddressId = clean(
+    let suppliedInstamartAddressId = clean(
       body.suppliedContext?.instamart_address_id ||
       activeTask?.entities?.addressId
     );
+
+    // Resolve a typed saved-address response on the server. The browser may
+    // not have received the full saved-address list, but the Swiggy token is
+    // available here, so Fetch can resolve the user's text to the real ID.
+    if (
+      !suppliedInstamartAddressId &&
+      activeTask?.provider?.id === "swiggy_instamart" &&
+      activeTask?.status === "address_selection_required"
+    ) {
+      const swiggyAddressToken = await getSwiggyToken(resolvedConversationId);
+      if (swiggyAddressToken?.access_token) {
+        try {
+          const addressResponse = await getSwiggyAddresses(
+            swiggyAddressToken.access_token
+          );
+          const addressData =
+            addressResponse?.data?.structuredContent?.data ||
+            addressResponse?.data?.data ||
+            addressResponse?.data ||
+            {};
+          const addressList = Array.isArray(addressData)
+            ? addressData
+            : addressData?.addresses ||
+              addressData?.savedAddresses ||
+              addressData?.saved_addresses ||
+              addressData?.items ||
+              [];
+
+          const normalizeAddress = (value) =>
+            String(value || "")
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, " ")
+              .replace(/\\s+/g, " ")
+              .trim();
+
+          const requested = normalizeAddress(text);
+          const requestedTokens = new Set(requested.split(" ").filter(Boolean));
+
+          let best = null;
+          let bestScore = 0;
+
+          for (const address of Array.isArray(addressList) ? addressList : []) {
+            const candidate = normalizeAddress([
+              address?.label,
+              address?.name,
+              address?.address,
+              address?.formattedAddress,
+              address?.addressLine,
+              address?.addressLine2,
+              address?.city,
+              address?.landmark
+            ].filter(Boolean).join(" "));
+
+            if (!candidate) continue;
+
+            const candidateTokens = new Set(candidate.split(" ").filter(Boolean));
+            let overlap = 0;
+            for (const token of requestedTokens) {
+              if (candidateTokens.has(token)) overlap += 1;
+            }
+
+            const score =
+              requested === candidate ? 1000 :
+              candidate.includes(requested) ? 800 + requested.length :
+              requested.includes(candidate) ? 700 + candidate.length :
+              overlap / Math.max(1, requestedTokens.size) * 100;
+
+            if (score > bestScore) {
+              bestScore = score;
+              best = address;
+            }
+          }
+
+          if (best && bestScore >= 55) {
+            suppliedInstamartAddressId = clean(
+              best?.id || best?.addressId
+            );
+          }
+        } catch (error) {
+          console.error("FETCH SWIGGY ADDRESS RESOLUTION ERROR", error);
+        }
+      }
+    }
 
     if (
       suppliedInstamartAddressId &&
