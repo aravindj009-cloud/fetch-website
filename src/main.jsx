@@ -474,7 +474,11 @@ export default function App() {
             channel: "web",
             latitude,
             longitude,
-            suppliedContext: {},
+            suppliedContext: {
+              instamart_payment_method: selectedPayment || null,
+              instamart_intent_app: selectedIntentApp || null,
+              instamart_address_id: instamartLive?.addressId || null
+            },
             activeTask: task,
             history: messages
               .slice(-10)
