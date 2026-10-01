@@ -1866,10 +1866,14 @@ export default function App() {
                                 return groups;
                               }, {})
                             ).map(([requested, options]) => (
-                              <div key={requested}>
-                                <div style={{fontSize:"11px",fontWeight:800,margin:"10px 0 4px"}}>{requested}</div>
+                              <div key={requested} className="instamartProductGroup">
+                                <div className="instamartRequestHeader">
+                                  <strong>{requested}</strong>
+                                  <span>Requested: {options[0]?.quantity || 1}{options[0]?.quantity && options[0]?.pack ? " · " : ""}{options[0]?.pack || ""}</span>
+                                </div>
+                                <div className="instamartMatchHint">Choose the product that matches your request. Fetch will use the selected variant in your live cart.</div>
                                 {options.map((option) => (
-                                  <label className="liveProduct" key={option.spinId}>
+                                  <label className="instamartProductOption" key={option.spinId}>
                                     <input
                                       type="radio"
                                       name={`fetch-product-${requested}`}
@@ -1877,9 +1881,16 @@ export default function App() {
                                       disabled={option.inStock === false || busy}
                                       onChange={() => setSelectedSpins((current) => ({ ...current, [requested]: option.spinId }))}
                                     />
-                                    <span className="liveProductInfo">
-                                      <strong>{option.name}</strong>
-                                      <small>{option.pack || "Variant"} · ₹{option.price ?? "—"} · {option.inStock === false ? "Out of stock" : "Available"}</small>
+                                    <span className="instamartProductCopy">
+                                      <span className="instamartProductTop">
+                                        <strong>{option.name || requested}</strong>
+                                        {option.inStock === false ? <em>Out of stock</em> : <em>Available</em>}
+                                      </span>
+                                      <span className="instamartProductMeta">
+                                        {option.pack ? <span>{option.pack}</span> : null}
+                                        {option.price != null ? <span>₹{option.price}</span> : <span>Price unavailable</span>}
+                                      </span>
+                                      <span className="instamartProductMatch">For your request: {option.quantity || 1} × this variant</span>
                                     </span>
                                   </label>
                                 ))}
