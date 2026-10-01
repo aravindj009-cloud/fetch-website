@@ -1108,9 +1108,11 @@ export default function App() {
           action: "prepare",
           conversationId: conversationRef.current,
           addressId,
+          autoSelect: instamartLive?.shoppingMode === "auto",
           items: (instamartLive?.requestedItems || []).map((item) => ({
             item: item.item || item.name,
-            quantity: item.quantity || 1
+            quantity: item.quantity || 1,
+            ...(item.unit ? { unit: item.unit } : {})
           }))
         })
       });
