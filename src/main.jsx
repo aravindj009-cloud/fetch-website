@@ -139,6 +139,25 @@ function getHost(url) {
   }
 }
 
+function getProviderActionUrl(value) {
+  if (!value || typeof value !== "object") return "";
+  const queue = [value];
+  const seen = new Set();
+
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+
+    for (const entry of Object.values(current)) {
+      if (typeof entry === "string" && /^https?:\\/\\//i.test(entry)) return entry;
+      if (entry && typeof entry === "object") queue.push(entry);
+    }
+  }
+
+  return "";
+}
+
 function getInstamartCartData(cart) {
   return cart?.data?.data || cart?.data || cart || {};
 }
@@ -1943,6 +1962,17 @@ export default function App() {
                               <div className="instamartEmptyState" style={{marginBottom:"12px"}}>
                                 <strong>Payment is required to finish this order</strong>
                                 <span>Fetch has prepared and verified the live cart. The order will not be marked placed until payment succeeds.</span>
+                                {getProviderActionUrl(instamartLive.payment) && (
+                                  <a
+                                    className="approvalButton"
+                                    href={getProviderActionUrl(instamartLive.payment)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{display:"block",textAlign:"center",textDecoration:"none",marginTop:"10px"}}
+                                  >
+                                    Continue with payment
+                                  </a>
+                                )}
                               </div>
                             )}
                             <div style={{fontSize:"12px",fontWeight:800}}>Live cart</div>
