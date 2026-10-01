@@ -1696,7 +1696,7 @@ export default function App() {
     if (!route) return;
 
     if (route.mode === "pending") {
-      setConnectionNotice("Zomato is not connected to Fetch yet. We’ll add its live connector when it is available.");
+      setConnectionNotice("Zomato’s Fetch connector is not available yet. This plugin will be enabled when the live connection is ready.");
       return;
     }
 
