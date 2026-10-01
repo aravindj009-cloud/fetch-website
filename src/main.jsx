@@ -148,10 +148,10 @@ function getInstamartPricing(cart) {
   const source = data?.pricing || data?.bill || data || {};
   return {
     ...source,
-    item_total: source?.item_total ?? source?.itemTotal ?? source?.subtotal ?? null,
-    delivery_charge: source?.delivery_charge ?? source?.deliveryCharge ?? null,
-    taxes_and_charges: source?.taxes_and_charges ?? source?.taxesAndCharges ?? source?.taxes ?? null,
-    to_pay: source?.to_pay ?? source?.billToPay ?? source?.total ?? null
+    item_total: source?.item_total ?? source?.itemTotal ?? source?.subtotal ?? source?.itemsTotal ?? source?.items_total ?? null,
+    delivery_charge: source?.delivery_charge ?? source?.deliveryCharge ?? source?.deliveryFee ?? source?.delivery_fee ?? null,
+    taxes_and_charges: source?.taxes_and_charges ?? source?.taxesAndCharges ?? source?.taxes ?? source?.taxAmount ?? source?.tax_amount ?? null,
+    to_pay: source?.to_pay ?? source?.billToPay ?? source?.total ?? source?.totalAmount ?? source?.grandTotal ?? source?.payableAmount ?? source?.payable_amount ?? null
   };
 }
 
@@ -167,9 +167,11 @@ function getInstamartPaymentMethods(paymentOptions, cart) {
   const direct =
     Array.isArray(source?.allMethods) ? source.allMethods :
     Array.isArray(source?.availablePaymentMethods) ? source.availablePaymentMethods :
+    Array.isArray(source?.upiMethods) ? source.upiMethods :
     Array.isArray(source?.methods) ? source.methods :
-    Array.isArray(source) ? source :
-    [];
+    Array.isArray(source?.allGroups)
+      ? source.allGroups.flatMap((group) => Array.isArray(group?.methods) ? group.methods : [])
+      : Array.isArray(source) ? source : [];
 
   const normalized = direct.map((method) => {
     if (typeof method === "string") {
