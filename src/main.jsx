@@ -154,12 +154,14 @@ function getInstamartPaymentMethods(paymentOptions, cart) {
     paymentOptions?.data ||
     paymentOptions ||
     getInstamartCartData(cart)?.paymentOptions ||
+    getInstamartCartData(cart)?.availablePaymentMethods ||
     {};
 
   const direct =
     Array.isArray(source?.allMethods) ? source.allMethods :
     Array.isArray(source?.availablePaymentMethods) ? source.availablePaymentMethods :
     Array.isArray(source?.methods) ? source.methods :
+    Array.isArray(source) ? source :
     [];
 
   const normalized = direct.map((method) => {
