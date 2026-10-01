@@ -43,9 +43,14 @@ function displayMessage(value, fallback = "I’m working on that.") {
 }
 
 const API_URL =
-  typeof window !== "undefined" && window.location.hostname === "tryfetch.in"
+  typeof window !== "undefined" && /(^|\.)tryfetch\.in$/.test(window.location.hostname)
     ? "https://www.tryfetch.in/api/fetch/agent.mjs"
     : "/api/fetch/agent.mjs";
+
+const FETCH_BUILD = "2026-10-01-api-fix-0a8dadc2";
+if (typeof document !== "undefined") {
+  document.documentElement.dataset.fetchBuild = FETCH_BUILD;
+}
 async function readApiJson(response) {
   const contentType = response.headers.get("content-type") || "";
   const body = await response.text();
