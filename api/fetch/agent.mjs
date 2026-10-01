@@ -61,7 +61,7 @@ function validCoordinates(latitude, longitude) {
 }
 
 function isActionConfirmation(text) {
-  return /^(yes|yeah|yep|sure|okay|ok|go ahead|do it|place it|place the order|confirm|confirmed|proceed|please do|that's fine|that works)$/i
+  return /^(yes|yeah|yep|sure|okay|ok|go ahead|do it|place it|place the order|confirm|confirmed|proceed|please do|that's fine|that works|okay\s+please\s+place\s+(?:the\s+)?order|please\s+place\s+(?:the\s+)?order|please\s+proceed|go\s+ahead\s+and\s+place\s+(?:the\s+)?order)$/i
     .test(clean(text).replace(/[.!]+$/, ""));
 }
 
@@ -882,11 +882,32 @@ export default async function handler(req, res) {
         )
     );
 
+    const instamartConversationFromHistory = recentHistory.some(
+      (entry) =>
+        entry?.role === "assistant" &&
+        /instamart/i.test(String(entry?.text || ""))
+    );
+
+    const originalInstamartRequest = [...recentHistory]
+      .reverse()
+      .find(
+        (entry) =>
+          entry?.role === "user" &&
+          /\b(milk|bread|eggs?|rice|biscuits?|kit\s*kat|munch|water|grocery|groceries)\b/i.test(
+            String(entry?.text || "")
+          )
+      );
+
+    const shouldRecoverInstamart =
+      !activeTask?.provider?.id &&
+      instamartConversationFromHistory &&
+      !!originalInstamartRequest;
+
     let addressSelectionTask = activeTask;
     if (
       (!addressSelectionTask ||
         addressSelectionTask?.status !== "address_selection_required") &&
-      pendingAddressFromHistory
+      (pendingAddressFromHistory || shouldRecoverInstamart)
     ) {
       const previousUserRequest = [...recentHistory]
         .reverse()
@@ -1090,6 +1111,66 @@ export default async function handler(req, res) {
         },
         instamart_preview: execution
       });
+    }
+
+    if (
+      isActionConfirmation(text) &&
+      activeTask?.provider?.id === "swiggy_instamart" &&
+      activeTask?.entities?.addressId &&
+      activeTask?.status !== "awaiting_checkout_confirmation"
+    ) {
+      const swiggyToken = await getSwiggyToken(resolvedConversationId);
+      if (swiggyToken?.access_token) {
+        const entities = activeTask.entities || {};
+        const execution = await prepareInstamartOrder({
+          accessToken: swiggyToken.access_token,
+          items: Array.isArray(entities.items) ? entities.items : [],
+          addressId: clean(entities.addressId)
+        });
+        const liveStatus = execution.status || "provider_ready";
+        const liveMessage =
+          execution.message ||
+          (liveStatus === "awaiting_product_selection"
+            ? "I found the live Instamart matches. Review the products and choose the variants you want."
+            : "I continued your Instamart request.");
+        const continuedTask = {
+          ...activeTask,
+          latestText: text,
+          text,
+          status: liveStatus,
+          stage:
+            liveStatus === "awaiting_product_selection" ? "products ready" :
+            liveStatus === "awaiting_checkout_confirmation" ? "cart ready for approval" :
+            liveStatus === "order_placed" ? "order placed" : "coordinating",
+          network: "Instamart",
+          provider: { id: "swiggy_instamart", name: "Instamart" },
+          lastResponse: liveMessage,
+          updatedAt: new Date().toISOString()
+        };
+        return json(res, 200, {
+          success: true,
+          status: liveStatus,
+          workflow_id: activeTask.workflowId || activeTask.id || null,
+          message: liveMessage,
+          active_task: continuedTask,
+          provider: {
+            id: "swiggy_instamart",
+            name: "Instamart",
+            company: "Swiggy",
+            category: "commerce",
+            connection_status: "connected"
+          },
+          execution: {
+            success: !!execution.success,
+            status: liveStatus,
+            message: liveMessage,
+            execution_type: "swiggy_instamart_mcp",
+            side_effect: liveStatus === "order_placed",
+            confirmation_required: liveStatus !== "order_placed"
+          },
+          instamart_preview: execution
+        });
+      }
     }
 
     if (
