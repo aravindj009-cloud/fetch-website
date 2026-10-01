@@ -478,6 +478,85 @@ export default function App() {
     setInput("");
     setBusy(true);
 
+    // A typed saved address is an explicit Instamart workflow action.
+    // Route it through the same prepare endpoint as the address buttons,
+    // rather than allowing the general conversation model to reinterpret it.
+    if (
+      conversationalInstamartAddressId &&
+      instamartLive?.status === "address_selection_required"
+    ) {
+      try {
+        const response = await fetch("/api/fetch/swiggy/execute.mjs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          },
+          body: JSON.stringify({
+            action: "prepare",
+            conversationId: conversationRef.current,
+            addressId: conversationalInstamartAddressId,
+            items: (instamartLive?.requestedItems || []).map((item) => ({
+              item: item.item || item.name,
+              quantity: item.quantity || 1
+            }))
+          })
+        });
+
+        const data = await readApiJson(response);
+        if (!response.ok || !data?.success) {
+          throw new Error(
+            data?.message || data?.error || "Could not prepare Instamart."
+          );
+        }
+
+        setInstamartLive(data);
+        setSelectedSpins({});
+        setSelectedPayment("");
+        setSelectedIntentApp("");
+        setTask((current) => ({
+          ...(current || {}),
+          text: current?.text || text,
+          latestText: text,
+          stage:
+            data.status === "awaiting_product_selection"
+              ? "products ready"
+              : data.status === "awaiting_checkout_confirmation"
+                ? "cart ready for approval"
+                : "coordinating",
+          status: data.status,
+          network: "Instamart",
+          provider: { id: "swiggy_instamart", name: "Instamart" }
+        }));
+        setMessages((current) => [
+          ...current,
+          {
+            id: makeId(),
+            role: "assistant",
+            text:
+              data.message ||
+              "Address selected. I’m checking live Instamart availability now.",
+            meta: { status: data.status, network: "Instamart" }
+          }
+        ]);
+      } catch (error) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: makeId(),
+            role: "assistant",
+            text:
+              error?.message ||
+              "I couldn't continue the Instamart request with that address.",
+            meta: { status: "error", network: "Instamart" }
+          }
+        ]);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     setTask({
       text,
       stage: "understanding",
