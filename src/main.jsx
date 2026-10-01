@@ -1740,25 +1740,38 @@ export default function App() {
 
                         {instamartLive.status === "address_selection_required" ? (
                           <>
-                            <div style={{fontSize:"12px",fontWeight:800,marginBottom:"8px"}}>Where should I deliver it?</div>
-                            {(instamartLive.addresses || []).map((address) => {
-                              const id = address?.id || address?.addressId;
-                              return (
-                                <button
-                                  type="button"
-                                  className="approvalButton"
-                                  key={id}
-                                  onClick={() => chooseInstamartAddress(id)}
-                                  disabled={busy}
-                                  style={{textAlign:"left",background:"#f4f4f4",color:"#111"}}
-                                >
-                                  <strong>{address?.label || address?.name || "Saved address"}</strong>
-                                  <br />
-                                  <span style={{fontWeight:400,opacity:.65}}>{address?.address || address?.formattedAddress || address?.addressLine || ""}</span>
-                                </button>
-                              );
-                            })}
+                            <div className="instamartSectionTitle">Where should I deliver it?</div>
+                            <div className="instamartAddressList">
+                              {(instamartLive.addresses || []).map((address) => {
+                                const id = address?.id || address?.addressId;
+                                return (
+                                  <button
+                                    type="button"
+                                    className="instamartAddressButton"
+                                    key={id}
+                                    onClick={() => chooseInstamartAddress(id)}
+                                    disabled={busy}
+                                  >
+                                    <span className="instamartAddressText">
+                                      <strong>{address?.label || address?.name || "Saved address"}</strong>
+                                      <small>{address?.address || address?.formattedAddress || address?.addressLine || ""}</small>
+                                    </span>
+                                    <span className="instamartAddressArrow">→</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </>
+                        ) : instamartLive.status === "awaiting_product_selection" && !instamartLive.productOptions?.length ? (
+                          <div className="instamartEmptyState">
+                            <strong>No live matches returned</strong>
+                            <span>{instamartLive.message || "Instamart did not return a usable product match."}</span>
+                            {Array.isArray(instamartLive.requestedItems) && instamartLive.requestedItems.length > 0 && (
+                              <small>
+                                Searched for: {instamartLive.requestedItems.map((item) => (item.quantity || 1) + " × " + (item.item || item.name)).join(" · ")}
+                              </small>
+                            )}
+                          </div>
                         ) : instamartLive.status === "order_placed" ? (
                           <>
                             <div style={{fontSize:"12px",fontWeight:800}}>Order placed ✓</div>
@@ -1897,7 +1910,10 @@ export default function App() {
                             </button>
                           </>
                         ) : (
-                          <div style={{fontSize:"12px",opacity:.65}}>Preparing live Instamart results…</div>
+                          <div className="instamartLoadingState">
+                            <span className="instamartSpinner" aria-hidden="true" />
+                            <span>Loading live Instamart results…</span>
+                          </div>
                         )}
                       </div>
                     )}
