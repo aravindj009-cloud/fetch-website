@@ -1187,7 +1187,7 @@ export default function App() {
         setMessages((current) => [...current, {
           id: makeId(),
           role: "assistant",
-          text: "Your selection is confirmed. Choose your payment method and I’ll place the order.",
+          text: "Perfect. I’ve selected that exact product and prepared your order. Review the total and choose how you’d like to pay.",
           meta: { status: data.status, network: "Instamart" }
         }]);
       } else {
@@ -1888,7 +1888,7 @@ export default function App() {
                               </div>
                             )}
                           </>
-                        ) : instamartLive.productOptions?.length && instamartLive.status !== "awaiting_payment" ? (
+                        ) : instamartLive.status === "awaiting_product_selection" && instamartLive.productOptions?.length ? (
                           <>
                             {Object.entries(
                               instamartLive.productOptions.reduce((groups, item) => {
@@ -1901,9 +1901,9 @@ export default function App() {
                               <div key={requested} className="instamartProductGroup">
                                 <div className="instamartRequestHeader">
                                   <strong>{requested}</strong>
-                                  <span>Requested: {options[0]?.quantity || 1}{options[0]?.quantity && options[0]?.pack ? " · " : ""}{options[0]?.pack || ""}</span>
+                                  <span>{formatRequestedQuantity(options[0])}</span>
                                 </div>
-                                <div className="instamartMatchHint">Choose the product that matches your request. Fetch will use the selected variant in your live cart.</div>
+                                <div className="instamartMatchHint">Choose the exact product you want. I’ll add the selected item and the required quantity to your live cart.</div>
                                 {options.map((option) => (
                                   <label className="instamartProductOption" key={option.spinId}>
                                     <input
@@ -1937,7 +1937,7 @@ export default function App() {
                               Review & continue
                             </button>
                           </>
-                        ) : instamartLive.cart ? (
+                        ) : ["awaiting_checkout_confirmation", "awaiting_payment"].includes(instamartLive.status) && instamartLive.cart ? (
                           <>
                             {instamartLive.status === "awaiting_payment" && (
                               <div className="instamartEmptyState" style={{marginBottom:"12px"}}>
@@ -1947,7 +1947,7 @@ export default function App() {
                             )}
                             <div style={{fontSize:"12px",fontWeight:800}}>Live cart</div>
                             <div style={{fontSize:"11px",opacity:.65,marginTop:"8px"}}>
-                              Live cart retrieved from Swiggy. Review the total and payment method below.
+                              Your order is ready. Review the items, delivery address and total before paying.
                             </div>
                             {(() => {
                               const cartData = getInstamartCartData(instamartLive.cart);
@@ -1986,8 +1986,33 @@ export default function App() {
                               );
                             })()}
 
+                            {instamartLive.status === "awaiting_payment" && (
+                              <div className="fetchPaymentStatusCard">
+                                <div className="fetchPaymentStatusTitle">Payment in progress</div>
+                                <div className="fetchPaymentStatusText">
+                                  Complete the payment using the option below. Fetch will confirm the order only after the payment succeeds.
+                                </div>
+                                {instamartLive.payment?.upiIntentUrl && (
+                                  <a
+                                    href={instamartLive.payment.upiIntentUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="approvalButton"
+                                    style={{display:"block",textAlign:"center",textDecoration:"none",marginTop:"10px"}}
+                                  >
+                                    Open UPI payment
+                                  </a>
+                                )}
+                                {instamartLive.payment?.isQrFlow && (
+                                  <div className="fetchPaymentQrHint">
+                                    Scan the payment QR shown by your payment provider to complete the order.
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             <div className="paymentBox">
-                              <strong style={{fontSize:"11px"}}>Payment method</strong>
+                              <strong style={{fontSize:"11px"}}>How would you like to pay?</strong>
                               {getInstamartPaymentMethods(instamartLive.paymentOptions, instamartLive.cart).length ? (
                                 getInstamartPaymentMethods(instamartLive.paymentOptions, instamartLive.cart).map((method) => {
                                   const group = method?.groupName || method?.id;
@@ -2006,7 +2031,7 @@ export default function App() {
                                             else setSelectedIntentApp("");
                                           }}
                                         />
-                                        <span>{method.displayName || group}</span>
+                                        <span>{method.displayName || (group === "UPI" ? "UPI" : group === "Cash" || group === "COD" ? "Cash on delivery" : group)}</span>
                                       </label>
                                     </div>
                                   );
@@ -2022,7 +2047,7 @@ export default function App() {
                               onClick={() => runInstamartLiveAction("checkout")}
                               disabled={busy || !selectedPayment}
                             >
-                              Pay & place order
+                              Continue to payment
                             </button>
                           </>
                         ) : (
