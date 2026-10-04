@@ -1180,3 +1180,36 @@ main {
 @media(max-width:600px){.fetchOnboarding{padding:0}.fetchOnboardingCard{min-height:100vh;max-height:none;border-radius:0;border:0;padding:22px 22px 18px}.fetchOnboardingScreen{padding:30px 4px 22px}.fetchOnboardingScreen h1{font-size:40px}.fetchOnboardingScreen h2{font-size:38px}}
 
 .executionTimeline{margin:0 16px 10px;padding:13px 14px;border:1px solid #e9e9e6;border-radius:16px;background:#fbfbf9}.executionTimelineHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;font-size:11px;color:#4a4a46}.executionTimelineHead span{display:flex;align-items:center;gap:7px;font-weight:700}.executionTimelineHead i{width:7px;height:7px;border-radius:50%;background:#78d7b1;display:inline-block;box-shadow:0 0 0 4px rgba(120,215,177,.12)}.executionTimelineHead b{font-size:10px;font-weight:600;opacity:.55}.executionSteps{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.executionStep{position:relative;min-width:0}.executionStep:not(:last-child)::after{content:"";position:absolute;top:10px;left:23px;right:-7px;height:1px;background:#e6e6e2}.executionDot{position:relative;z-index:1;width:21px;height:21px;border-radius:50%;display:grid;place-items:center;border:1px solid #deded9;background:#fff;color:#8b8b84;font-size:9px;font-weight:800;margin-bottom:7px}.executionStep div{display:flex;flex-direction:column;gap:2px}.executionStep strong{font-size:10px}.executionStep small{font-size:9px;line-height:1.35;color:#96968f}.executionStep.complete .executionDot{background:#1c1c1a;color:#fff;border-color:#1c1c1a}.executionStep.complete:not(:last-child)::after{background:#1c1c1a}.executionStep.active .executionDot{background:#dff7eb;color:#15362a;border-color:#78d7b1;box-shadow:0 0 0 4px rgba(120,215,177,.12)}.executionStep.active strong{color:#15362a}.executionStep.failed .executionDot{background:#fee8e5;color:#8f2e24;border-color:#e7aaa2}.executionTimeline.isFailed .executionTimelineHead i{background:#d66a5c;box-shadow:0 0 0 4px rgba(214,106,92,.12)}@media(max-width:700px){.executionSteps{grid-template-columns:1fr 1fr}.executionStep:not(:last-child)::after{display:none}.executionStep{padding-bottom:6px}}
+
+
+/* Fetch control-center panels */
+.fetchWorkspaceHero{padding:11px 9px;border:1px solid #1111;border-radius:12px;background:#fff;display:flex;flex-direction:column;gap:5px}
+.fetchWorkspaceHero strong{font-size:10px;line-height:1.4}
+.fetchWorkspaceHero span{font-size:9px;color:#888}
+.fetchPanelDivider{height:1px;background:#1111;margin:15px 0}
+.fetchTaskRow{display:flex;gap:8px;align-items:flex-start;padding:9px 7px;border-radius:10px}
+.fetchTaskRow:hover{background:#11110d08}
+.fetchTaskRow>span:last-child{min-width:0;display:flex;flex-direction:column;gap:3px}
+.fetchTaskRow strong{font-size:9px;line-height:1.35;overflow:hidden;text-overflow:ellipsis}
+.fetchTaskRow small{font-size:8px;color:#999;text-transform:capitalize}
+.fetchTaskDot{width:7px;height:7px;border-radius:50%;margin-top:4px;background:#c7c7c2;flex:none}
+.fetchTaskDot.completed,.fetchTaskDot.done{background:#78bda0}
+.fetchTaskDot.running,.fetchTaskDot.working{background:#d5ae55}
+.fetchTaskDot.failed,.fetchTaskDot.error{background:#d67a70}
+.fetchControlCard{padding:12px 10px;border:1px solid #1111;border-radius:12px;background:#fff}
+.fetchControlCard strong{font-size:11px}
+.fetchControlCard p{margin:6px 0 0;font-size:9px;line-height:1.5;color:#888}
+.fetchMemoryCommand{margin-top:10px;padding:10px 8px;border:1px solid #1111;border-radius:11px;background:#fff;display:flex;flex-direction:column;gap:8px}
+.fetchMemoryCommand span{font-size:8px;text-transform:uppercase;letter-spacing:.1em;color:#aaa}
+.fetchMemoryCommand button{border:0;background:#f3f3ef;border-radius:8px;padding:8px;text-align:left;font-size:9px;font-weight:650;cursor:pointer}
+.fetchMemoryCommand button:hover{background:#eaeae5}
+.fetchPreferenceRow{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;background:transparent;padding:11px 7px;text-align:left;border-radius:10px;cursor:pointer}
+.fetchPreferenceRow:hover{background:#11110d08}
+.fetchPreferenceRow>span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.fetchPreferenceRow strong{font-size:9px}
+.fetchPreferenceRow small{font-size:8px;line-height:1.4;color:#999}
+.fetchPreferenceRow>i{width:30px;height:18px;border-radius:20px;background:#d8d8d3;padding:2px;display:flex;align-items:center;flex:none}
+.fetchPreferenceRow>i b{width:14px;height:14px;border-radius:50%;background:#fff;display:block;transition:transform .18s}
+.fetchPreferenceRow.enabled>i{background:#111}
+.fetchPreferenceRow.enabled>i b{transform:translateX(12px)}
+.fetchPreferenceNote{margin:12px 7px 0;font-size:8px;line-height:1.5;color:#aaa}
