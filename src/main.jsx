@@ -1854,7 +1854,9 @@ export default function App() {
     }, 0);
   }
 
-  const handleOnboardingStarter = (starter) => { window.setTimeout(() => send(starter), 120); };\n\n  const hasUserMessage = messages.some(
+  const handleOnboardingStarter = (starter) => { window.setTimeout(() => send(starter), 120); };
+
+  const hasUserMessage = messages.some(
     (message) => message.role === "user"
   );
 
