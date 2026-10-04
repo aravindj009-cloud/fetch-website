@@ -567,6 +567,15 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return localStorage.getItem("fetch_onboarding_v3_complete") !== "1"; } catch { return true; } });
   const [connectionNotice, setConnectionNotice] = useState(null);
   const [activeNav, setActiveNav] = useState("chat");
+  const [workspaceTasks, setWorkspaceTasks] = useState([]);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [preferences, setPreferences] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("fetch_preferences") || "{}");
+    } catch {
+      return {};
+    }
+  });
   const [connectedPlugins, setConnectedPlugins] = useState(() => {
     try { return JSON.parse(localStorage.getItem("fetch_connected_plugins") || "{}"); }
     catch { return {}; }
@@ -1768,6 +1777,42 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (activeNav !== "workspace") return;
+
+    let cancelled = false;
+
+    async function loadWorkspaceTasks() {
+      setWorkspaceLoading(true);
+      try {
+        const tasksUrl = API_URL.replace("/api/fetch/agent.mjs", "/api/fetch/tasks.mjs");
+        const response = await fetch(
+          tasksUrl + "?conversation_id=" + encodeURIComponent(conversationRef.current) + "&channel=web&limit=12",
+          { cache: "no-store", headers: { Accept: "application/json" } }
+        );
+        const data = await readApiJson(response);
+        if (!cancelled && response.ok && data?.success) {
+          setWorkspaceTasks(Array.isArray(data.tasks) ? data.tasks : []);
+        }
+      } catch (error) {
+        console.warn("FETCH WORKSPACE TASKS ERROR", error);
+      } finally {
+        if (!cancelled) setWorkspaceLoading(false);
+      }
+    }
+
+    void loadWorkspaceTasks();
+    return () => { cancelled = true; };
+  }, [activeNav, messages.length]);
+
+  function updatePreference(key, value) {
+    setPreferences((current) => {
+      const next = { ...current, [key]: value };
+      try { localStorage.setItem("fetch_preferences", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
+
+  useEffect(() => {
     if (messages.some((message) => message.role === "user")) {
       saveRecentConversation(conversationRef.current, messages);
     }
@@ -1873,11 +1918,20 @@ export default function App() {
         </button>
 
         <nav className="fetchNavSection">
+          <button className={activeNav === "workspace" ? "active" : ""} onClick={() => setActiveNav("workspace")}>
+            <span>▦</span> Workspace
+          </button>
           <button className={activeNav === "chat" ? "active" : ""} onClick={() => setActiveNav("chat")}>
             <span>⌂</span> Chat
           </button>
           <button className={activeNav === "recent" ? "active" : ""} onClick={() => setActiveNav("recent")}>
             <span>◷</span> Recent chats
+          </button>
+          <button className={activeNav === "memory" ? "active" : ""} onClick={() => setActiveNav("memory")}>
+            <span>⌁</span> Memory
+          </button>
+          <button className={activeNav === "preferences" ? "active" : ""} onClick={() => setActiveNav("preferences")}>
+            <span>⚙</span> Preferences
           </button>
           <button className={activeNav === "plugins" ? "active" : ""} onClick={() => setActiveNav("plugins")}>
             <span>◈</span> Plugins
@@ -1886,6 +1940,74 @@ export default function App() {
             <span>⌁</span> Fetch Partners
           </button>
         </nav>
+
+        {activeNav === "workspace" && (
+          <div className="fetchSidebarPanel fetchWorkspacePanel">
+            <small className="fetchPanelLabel">WORKSPACE</small>
+            <div className="fetchWorkspaceHero">
+              <strong>{task?.text || "No active task"}</strong>
+              <span>{task ? (task.stage || task.status || "Working") : "Ask Fetch for anything."}</span>
+            </div>
+
+            <div className="fetchPanelDivider" />
+            <small className="fetchPanelLabel">RECENT TASKS</small>
+            {workspaceLoading ? (
+              <p className="fetchEmptyPanel">Loading your tasks…</p>
+            ) : workspaceTasks.length ? workspaceTasks.slice(0, 8).map((item) => (
+              <div className="fetchTaskRow" key={item.id}>
+                <span className={"fetchTaskDot " + String(item.status || "").toLowerCase()} />
+                <span>
+                  <strong>{item.objective || item.input_text || item.title || "Fetch task"}</strong>
+                  <small>{item.status || "unknown"}{item.updated_at ? " · " + new Date(item.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : ""}</small>
+                </span>
+              </div>
+            )) : (
+              <p className="fetchEmptyPanel">Your completed and active tasks will appear here.</p>
+            )}
+          </div>
+        )}
+
+        {activeNav === "memory" && (
+          <div className="fetchSidebarPanel">
+            <small className="fetchPanelLabel">MEMORY</small>
+            <div className="fetchControlCard">
+              <strong>Fetch remembers what helps.</strong>
+              <p>Saved facts and preferences are used to make future requests easier. You stay in control.</p>
+            </div>
+            <div className="fetchMemoryCommand">
+              <span>Try in chat</span>
+              <button onClick={() => { setActiveNav("chat"); setInput("What do you remember about me?"); setTimeout(() => inputRef.current?.focus(), 0); }}>
+                What do you remember?
+              </button>
+            </div>
+            <div className="fetchMemoryCommand">
+              <span>Remove a saved fact</span>
+              <button onClick={() => { setActiveNav("chat"); setInput("Forget what you remember about me"); setTimeout(() => inputRef.current?.focus(), 0); }}>
+                Forget something
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeNav === "preferences" && (
+          <div className="fetchSidebarPanel">
+            <small className="fetchPanelLabel">PREFERENCES</small>
+            {[
+              ["confirm_purchases", "Ask before purchases", "Fetch will always stop for your approval before money is spent.", true],
+              ["confirm_messages", "Ask before sending messages", "Fetch will show you messages before sending them.", true],
+              ["follow_updates", "Keep me updated", "Show progress and completion updates for active tasks.", true]
+            ].map(([key, title, detail, defaultValue]) => {
+              const enabled = preferences[key] ?? defaultValue;
+              return (
+                <button className={"fetchPreferenceRow " + (enabled ? "enabled" : "")} key={key} onClick={() => updatePreference(key, !enabled)}>
+                  <span><strong>{title}</strong><small>{detail}</small></span>
+                  <i><b /></i>
+                </button>
+              );
+            })}
+            <div className="fetchPreferenceNote">These preferences are saved on this device. They never contain payment credentials or connector secrets.</div>
+          </div>
+        )}
 
         {activeNav === "recent" && (
           <div className="fetchSidebarPanel">
