@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import FetchOnboarding from "./FetchOnboarding.jsx";
 
 const starters = [
   "Get me a cab to Technopark",
@@ -522,6 +523,7 @@ export default function App() {
   const [selectedIntentApp, setSelectedIntentApp] = useState("");
   const [selectedGenerateUPIQR, setSelectedGenerateUPIQR] = useState(false);
   const [showInstamartConfirmation, setShowInstamartConfirmation] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => { try { return localStorage.getItem("fetch_onboarding_v3_complete") !== "1"; } catch { return true; } });
   const [connectionNotice, setConnectionNotice] = useState(null);
   const [activeNav, setActiveNav] = useState("chat");
   const [connectedPlugins, setConnectedPlugins] = useState(() => {
@@ -1766,12 +1768,13 @@ export default function App() {
     }, 0);
   }
 
-  const hasUserMessage = messages.some(
+  const handleOnboardingStarter = (starter) => { window.setTimeout(() => send(starter), 120); };\n\n  const hasUserMessage = messages.some(
     (message) => message.role === "user"
   );
 
   return (
     <div className="app">
+      {showOnboarding && <FetchOnboarding onComplete={() => setShowOnboarding(false)} onStarter={handleOnboardingStarter} onConnect={connectPlugin} />}
 
       <style>{`
         .instamartLiveCard { margin-top:14px; padding:14px; border:1px solid #e6e6e6; border-radius:14px; background:#fff; }
