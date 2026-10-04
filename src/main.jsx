@@ -484,6 +484,47 @@ class FetchErrorBoundary extends React.Component {
   }
 }
 
+function ExecutionTimeline({ task, busy }) {
+  if (!task) return null;
+
+  const raw = String(task.stage || task.status || "").toLowerCase();
+  const failed = raw.includes("error") || raw.includes("failed");
+  const done = ["done", "completed", "order placed", "delivered"].some((v) => raw.includes(v));
+  const index =
+    done ? 4 :
+    raw.includes("payment") || raw.includes("approval") || raw.includes("cart") || raw.includes("shopping") || raw.includes("assigned") || raw.includes("delivery") ? 3 :
+    raw.includes("route") || raw.includes("partner") || raw.includes("provider") || raw.includes("coordinate") || raw.includes("finding") ? 2 :
+    raw.includes("plan") ? 1 : 0;
+
+  const steps = [
+    ["Understand", "Task understood"],
+    ["Plan", "Working out the best path"],
+    ["Route", task.network ? `Using ${task.network}` : "Choosing a service"],
+    ["Act", "Carrying out the task"],
+    ["Done", done ? "Task completed" : "Ready for your next request"]
+  ];
+
+  return (
+    <div className={`executionTimeline ${failed ? "isFailed" : ""}`}>
+      <div className="executionTimelineHead">
+        <span><i /> {failed ? "Fetch needs attention" : busy ? "Fetch is working" : done ? "Fetch completed the task" : "Fetch is working on it"}</span>
+        {task.network && <b>{task.network}</b>}
+      </div>
+      <div className="executionSteps">
+        {steps.map(([title, detail], i) => {
+          const state = failed && i === index ? "failed" : i < index || (done && i <= 4) ? "complete" : i === index ? "active" : "waiting";
+          return (
+            <div className={`executionStep ${state}`} key={title}>
+              <span className="executionDot">{state === "complete" ? "✓" : state === "failed" ? "!" : i + 1}</span>
+              <div><strong>{title}</strong><small>{detail}</small></div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function formatRequestedQuantity(option) {
   const quantity = Number(option?.quantity || 1);
   const pack = String(option?.pack || "").trim();
