@@ -1563,8 +1563,14 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const provider = params.get("uber") === "connected" ? "Uber" : params.get("swiggy") === "connected" ? "Instamart" : null;
+    const provider = params.get("uber") === "connected"
+      ? "Uber"
+      : params.get("swiggy") === "connected"
+        ? "Swiggy"
+        : null;
     const returnedConversationId = params.get("conversationId");
+    const swiggyConnected = params.get("swiggy") === "connected";
+    const instamartConnected = params.get("instamart") === "connected";
 
     // Restore the exact Fetch conversation that initiated OAuth.
     if (returnedConversationId) {
@@ -1572,13 +1578,22 @@ export default function App() {
       localStorage.setItem("fetch_conversation_id", returnedConversationId);
     }
 
-    if (provider) {
+    if (provider || swiggyConnected || instamartConnected) {
       setConnectedPlugins((current) => {
-        const next = { ...current, [provider]: "connected" };
+        const next = { ...current };
+        if (provider) next[provider] = "connected";
+        if (swiggyConnected || instamartConnected) {
+          next.Swiggy = "connected";
+          next.Instamart = "connected";
+        }
         try { localStorage.setItem("fetch_connected_plugins", JSON.stringify(next)); } catch {}
         return next;
       });
-      setConnectionNotice(provider + " is connected to Fetch. Your next request can use it directly.");
+      setConnectionNotice(
+        swiggyConnected || instamartConnected
+          ? "Swiggy and Instamart are connected to Fetch. Your next request can use either execution path."
+          : provider + " is connected to Fetch. Your next request can use it directly."
+      );
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
