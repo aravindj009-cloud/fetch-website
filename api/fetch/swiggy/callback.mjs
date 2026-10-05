@@ -31,6 +31,7 @@ export default async function handler(req, res) {
     // tryfetch.in preserves the browser's Fetch conversation/session state.
     const target = new URL("https://tryfetch.in/");
     target.searchParams.set("swiggy", "connected");
+    target.searchParams.set("instamart", "connected");
     target.searchParams.set("conversationId", row.conversation_id);
     res.status(302);
     res.setHeader("Location", target.toString());
