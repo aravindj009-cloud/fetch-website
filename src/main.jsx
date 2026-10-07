@@ -594,6 +594,46 @@ export default function App() {
     saveProfile({ ...profile, [field]: value });
   };
 
+  // Keep the saved profile location fresh without prompting the customer.
+  // If browser permission is already granted, Fetch silently refreshes the
+  // location when the saved coordinate is older than 15 minutes.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshGrantedLocation() {
+      if (!navigator.geolocation || !navigator.permissions?.query) return;
+
+      try {
+        const permission = await navigator.permissions.query({ name: "geolocation" });
+        if (permission.state !== "granted") return;
+
+        const updatedAt = Date.parse(profile?.locationUpdatedAt || "");
+        const isFresh = Number.isFinite(updatedAt) && (Date.now() - updatedAt) < 15 * 60 * 1000;
+        if (isFresh) return;
+
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            if (cancelled) return;
+            saveProfile({
+              ...profile,
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              locationUpdatedAt: new Date().toISOString(),
+              locationSource: "browser_geolocation"
+            });
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        );
+      } catch {
+        // Saved profile coordinates remain the fallback.
+      }
+    }
+
+    refreshGrantedLocation();
+    return () => { cancelled = true; };
+  }, [profile?.locationUpdatedAt]);
+
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const conversationRef = useRef(getConversationId());
@@ -2046,10 +2086,9 @@ export default function App() {
             Fetch is ready
           </span>
 
-          <button className="topProfileButton" onClick={() => setProfileOpen(true)} aria-label="Open profile">
+          <button className="topProfileButton" onClick={() => setProfileOpen(true)} aria-label="Open Fetch profile menu">
             <span className="profileAvatar">{String(profile?.name || "F").trim().slice(0, 1).toUpperCase()}</span>
-            <span className="profileButtonText">{profile?.name || "Profile"}</span>
-            <span className="profileMenuIcon">☰</span>
+            <span className="profileMenuIcon" aria-hidden="true">☰</span>
           </button>
 
           <button onClick={clearConversation}>
@@ -2086,16 +2125,17 @@ export default function App() {
               <label>City<input value={profile?.city || ""} onChange={(e) => updateProfileField("city", e.target.value)} placeholder="City" /></label>
 
               <div className="profileLocationCard">
-                <div>
+                <div className="profileLocationIcon">⌖</div>
+                <div className="profileLocationCopy">
                   <strong>Customer location</strong>
                   <small>
                     {profile?.latitude && profile?.longitude
-                      ? "Saved · Fetch will use this for nearby matching"
-                      : "Not saved yet"}
+                      ? `Saved · ${profile?.locationUpdatedAt ? "updated " + new Date(profile.locationUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "ready"}`
+                      : "Add your location once. Fetch will use it automatically for nearby partners and services."}
                   </small>
                 </div>
                 <button type="button" onClick={requestAndSaveProfileLocation}>
-                  {profile?.latitude && profile?.longitude ? "Update" : "Use current location"}
+                  {profile?.latitude && profile?.longitude ? "Refresh" : "Enable"}
                 </button>
               </div>
             </div>
@@ -2109,7 +2149,8 @@ export default function App() {
             </div>
 
             <div className="profilePrivacyNote">
-              Your saved location is used to find nearby Fetch partners and relevant services. You can update it anytime.
+              <strong>Profile context</strong>
+              <span>Your details and preferred location stay with your Fetch profile. Nearby partner searches use the saved location automatically, so you don't need to send a location pin for every request.</span>
             </div>
           </section>
         </div>
