@@ -1190,7 +1190,15 @@ main {
   font-weight: 800;
 }
 .profileButtonText { font-size: 10px; }
-.profileMenuIcon { font-size: 13px; color: #777; }
+.profileMenuIcon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  color: #777;
+  line-height: 1;
+}
 
 .profileOverlay {
   position: fixed;
@@ -1289,6 +1297,18 @@ main {
   border-radius:13px;
   background:#fff;
 }
+.profileLocationIcon {
+  width:34px;
+  height:34px;
+  flex:0 0 34px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:#111;
+  color:#fff;
+  font-size:16px;
+}
+.profileLocationCopy { flex:1; min-width:0; }
 .profileLocationCard strong,
 .profileLocationCard small { display:block; }
 .profileLocationCard strong { font-size:11px; }
@@ -1333,10 +1353,21 @@ main {
 }
 .profilePrivacyNote {
   margin-top:18px;
+  padding:12px 0;
+  border-top:1px solid #1111;
   color:#999;
   font-size:9px;
   line-height:1.55;
 }
+.profilePrivacyNote strong {
+  display:block;
+  margin-bottom:5px;
+  color:#666;
+  font-size:9px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.profilePrivacyNote span { display:block; }
 
 @media (max-width:600px) {
   .topProfileButton {
