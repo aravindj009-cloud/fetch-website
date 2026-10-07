@@ -1169,3 +1169,182 @@ main {
   header { margin-left:0; margin-top:145px; }
   main { margin-left:0; width:94vw; padding-top:38px; }
 }
+
+
+/* Fetch customer profile drawer */
+.topProfileButton {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px !important;
+}
+.profileAvatar {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #111;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+}
+.profileButtonText { font-size: 10px; }
+.profileMenuIcon { font-size: 13px; color: #777; }
+
+.profileOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0,0,0,.24);
+  backdrop-filter: blur(4px);
+}
+.profileDrawer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(390px, 92vw);
+  overflow-y: auto;
+  padding: 28px;
+  background: #f7f7f3;
+  border-left: 1px solid #1112;
+  box-shadow: -20px 0 70px #0002;
+}
+.profileDrawerHead {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+}
+.profileDrawerHead small {
+  font-size: 9px;
+  letter-spacing:.16em;
+  color:#888;
+  font-weight:800;
+}
+.profileDrawerHead h2 {
+  margin:7px 0 0;
+  font:600 28px/1.05 "Space Grotesk";
+  letter-spacing:-.06em;
+}
+.profileClose {
+  width:34px;
+  height:34px;
+  border:1px solid #1112;
+  border-radius:50%;
+  background:#fff;
+  font-size:20px;
+}
+.profileAvatarLarge {
+  width:72px;
+  height:72px;
+  margin:28px 0 20px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:#111;
+  color:#fff;
+  font:700 27px "Space Grotesk";
+}
+.profileSection {
+  padding:18px 0;
+  border-top:1px solid #1111;
+}
+.profileSectionTitle {
+  margin-bottom:13px;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:#777;
+}
+.profileSection label {
+  display:block;
+  margin:10px 0;
+  font-size:10px;
+  color:#666;
+}
+.profileSection input,
+.profileSection textarea {
+  width:100%;
+  margin-top:6px;
+  padding:11px 12px;
+  border:1px solid #1112;
+  border-radius:11px;
+  outline:0;
+  background:#fff;
+  color:#111;
+  resize:vertical;
+}
+.profileSection input:focus,
+.profileSection textarea:focus { border-color:#1116; }
+.profileLocationCard {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:15px;
+  padding:13px;
+  border:1px solid #1111;
+  border-radius:13px;
+  background:#fff;
+}
+.profileLocationCard strong,
+.profileLocationCard small { display:block; }
+.profileLocationCard strong { font-size:11px; }
+.profileLocationCard small {
+  margin-top:4px;
+  max-width:210px;
+  color:#888;
+  font-size:9px;
+  line-height:1.4;
+}
+.profileLocationCard button {
+  flex-shrink:0;
+  border:1px solid #1113;
+  border-radius:999px;
+  background:#111;
+  color:#fff;
+  padding:8px 11px;
+  font-size:9px;
+  font-weight:700;
+}
+.profileMenuLinks {
+  border-top:1px solid #1111;
+  padding-top:8px;
+}
+.profileMenuLinks button {
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:13px 4px;
+  border:0;
+  border-bottom:1px solid #1111;
+  background:transparent;
+  text-align:left;
+  font-size:11px;
+  color:#222;
+}
+.profileMenuLinks button span {
+  width:20px;
+  color:#777;
+  text-align:center;
+}
+.profilePrivacyNote {
+  margin-top:18px;
+  color:#999;
+  font-size:9px;
+  line-height:1.55;
+}
+
+@media (max-width:600px) {
+  .topProfileButton {
+    padding:5px !important;
+  }
+  .profileButtonText { display:none; }
+  .profileDrawer {
+    width:100%;
+    padding:24px 20px;
+  }
+}
