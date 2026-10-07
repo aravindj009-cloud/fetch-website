@@ -524,6 +524,14 @@ export default function App() {
   const [showInstamartConfirmation, setShowInstamartConfirmation] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState(null);
   const [activeNav, setActiveNav] = useState("chat");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profile, setProfile] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("fetch_profile") || "{}");
+    } catch {
+      return {};
+    }
+  });
   const [connectedPlugins, setConnectedPlugins] = useState(() => {
     try { return JSON.parse(localStorage.getItem("fetch_connected_plugins") || "{}"); }
     catch { return {}; }
@@ -538,6 +546,53 @@ export default function App() {
 
   const activeWatchRef = useRef(null);
   const lastOrderMessageRef = useRef(new Map());
+
+  const saveProfile = (nextProfile) => {
+    setProfile(nextProfile);
+    try {
+      localStorage.setItem("fetch_profile", JSON.stringify(nextProfile));
+    } catch {
+      // Profile remains available for this session if storage is unavailable.
+    }
+  };
+
+  const requestAndSaveProfileLocation = () => {
+    if (!navigator.geolocation) {
+      setConnectionNotice({
+        title: "Location unavailable",
+        message: "This browser does not provide location access."
+      });
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nextProfile = {
+          ...profile,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          locationUpdatedAt: new Date().toISOString(),
+          locationSource: "browser_geolocation"
+        };
+        saveProfile(nextProfile);
+        setConnectionNotice({
+          title: "Location saved",
+          message: "Fetch will use this location for nearby partner matching."
+        });
+      },
+      () => {
+        setConnectionNotice({
+          title: "Location not saved",
+          message: "Allow location access in your browser and try again."
+        });
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  };
+
+  const updateProfileField = (field, value) => {
+    saveProfile({ ...profile, [field]: value });
+  };
 
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -826,25 +881,38 @@ export default function App() {
       const isProviderCandidate =
         /\b(instamart|swiggy|grocery|groceries|milk|bread|eggs|rice|snacks|biscuits|kitkat|munch|water|cab|taxi|ride|uber|rapido|bike taxi|auto)\b/i.test(text);
 
-      let latitude = null;
-      let longitude = null;
+      // Profile location is the primary source. If it has not been saved yet,
+      // request browser location once and save it back into the profile.
+      let latitude = Number(profile?.latitude) || null;
+      let longitude = Number(profile?.longitude) || null;
 
-      if ((isPhysicalRequest && !isProviderCandidate || isMobilityRequest) && navigator.geolocation) {
-        const position = await new Promise((resolve, reject) => {
+      if (
+        (!latitude || !longitude) &&
+        (isPhysicalRequest && !isProviderCandidate || isMobilityRequest) &&
+        navigator.geolocation
+      ) {
+        const position = await new Promise((resolve) => {
           navigator.geolocation.getCurrentPosition(
             resolve,
-            reject,
+            () => resolve(null),
             {
               enableHighAccuracy: true,
               timeout: 10000,
               maximumAge: 60000
             }
           );
-        }).catch(() => null);
+        });
 
         if (position?.coords) {
           latitude = position.coords.latitude;
           longitude = position.coords.longitude;
+          saveProfile({
+            ...profile,
+            latitude,
+            longitude,
+            locationUpdatedAt: new Date().toISOString(),
+            locationSource: "browser_geolocation"
+          });
         }
       }
 
@@ -865,7 +933,16 @@ export default function App() {
             suppliedContext: {
               instamart_payment_method: selectedPayment || null,
               instamart_intent_app: selectedIntentApp || null,
-              instamart_address_id: conversationalInstamartAddressId
+              instamart_address_id: conversationalInstamartAddressId,
+              customer_profile: {
+                name: profile?.name || null,
+                phone: profile?.phone || null,
+                email: profile?.email || null,
+                address: profile?.address || null,
+                city: profile?.city || null,
+                latitude,
+                longitude
+              }
             },
             activeTask: task,
             history: messages
@@ -1969,11 +2046,74 @@ export default function App() {
             Fetch is ready
           </span>
 
+          <button className="topProfileButton" onClick={() => setProfileOpen(true)} aria-label="Open profile">
+            <span className="profileAvatar">{String(profile?.name || "F").trim().slice(0, 1).toUpperCase()}</span>
+            <span className="profileButtonText">{profile?.name || "Profile"}</span>
+            <span className="profileMenuIcon">☰</span>
+          </button>
+
           <button onClick={clearConversation}>
             New
           </button>
         </div>
       </header>
+
+      {profileOpen && (
+        <div className="profileOverlay" onMouseDown={() => setProfileOpen(false)}>
+          <section className="profileDrawer" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="profileDrawerHead">
+              <div>
+                <small>FETCH PROFILE</small>
+                <h2>{profile?.name || "Your profile"}</h2>
+              </div>
+              <button type="button" className="profileClose" onClick={() => setProfileOpen(false)}>×</button>
+            </div>
+
+            <div className="profileAvatarLarge">
+              {String(profile?.name || "F").trim().slice(0, 1).toUpperCase()}
+            </div>
+
+            <div className="profileSection">
+              <div className="profileSectionTitle">Personal details</div>
+              <label>Name<input value={profile?.name || ""} onChange={(e) => updateProfileField("name", e.target.value)} placeholder="Your name" /></label>
+              <label>Phone<input value={profile?.phone || ""} onChange={(e) => updateProfileField("phone", e.target.value)} placeholder="+91..." inputMode="tel" /></label>
+              <label>Email<input value={profile?.email || ""} onChange={(e) => updateProfileField("email", e.target.value)} placeholder="you@example.com" type="email" /></label>
+            </div>
+
+            <div className="profileSection">
+              <div className="profileSectionTitle">Home / preferred location</div>
+              <label>Address<textarea value={profile?.address || ""} onChange={(e) => updateProfileField("address", e.target.value)} placeholder="House, street, locality" rows="2" /></label>
+              <label>City<input value={profile?.city || ""} onChange={(e) => updateProfileField("city", e.target.value)} placeholder="City" /></label>
+
+              <div className="profileLocationCard">
+                <div>
+                  <strong>Customer location</strong>
+                  <small>
+                    {profile?.latitude && profile?.longitude
+                      ? "Saved · Fetch will use this for nearby matching"
+                      : "Not saved yet"}
+                  </small>
+                </div>
+                <button type="button" onClick={requestAndSaveProfileLocation}>
+                  {profile?.latitude && profile?.longitude ? "Update" : "Use current location"}
+                </button>
+              </div>
+            </div>
+
+            <div className="profileMenuLinks">
+              <button type="button"><span>◷</span> Recent chats</button>
+              <button type="button" onClick={() => { setProfileOpen(false); setActiveNav("plugins"); }}><span>◈</span> Connected services</button>
+              <button type="button" onClick={() => { setProfileOpen(false); setActiveNav("partners"); }}><span>⌁</span> Fetch Partners</button>
+              <button type="button"><span>⚙</span> Preferences</button>
+              <button type="button"><span>↗</span> Invite a friend</button>
+            </div>
+
+            <div className="profilePrivacyNote">
+              Your saved location is used to find nearby Fetch partners and relevant services. You can update it anytime.
+            </div>
+          </section>
+        </div>
+      )}
 
       <main>
 
