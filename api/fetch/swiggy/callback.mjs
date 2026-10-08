@@ -25,10 +25,20 @@ export default async function handler(req, res) {
     const token = await exchangeSwiggyCode(row, code);
     await saveSwiggyToken(row.conversation_id, token);
 
-    // Always return the customer to the canonical Fetch production domain.
-    // The OAuth callback itself runs on Swiggy's allowlisted Vercel URL,
-    // which is a different browser origin from tryfetch.in. Returning to
-    // tryfetch.in preserves the browser's Fetch conversation/session state.
+    // WhatsApp-originated OAuth should return the user to the WhatsApp
+    // conversation, not leave them in the Fetch website. The backend sends
+    // the connection confirmation through WhatsApp and renders only a small
+    // browser handoff page.
+    if (String(row.conversation_id || "").startsWith("whatsapp:")) {
+      const target = new URL("https://tryfetch.in/api/fetch/context.mjs");
+      target.searchParams.set("oauth_resume", "1");
+      target.searchParams.set("conversation_id", row.conversation_id);
+      res.status(302);
+      res.setHeader("Location", target.toString());
+      res.end();
+      return;
+    }
+
     const target = new URL("https://tryfetch.in/");
     target.searchParams.set("swiggy", "connected");
     target.searchParams.set("instamart", "connected");
