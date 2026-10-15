@@ -86,8 +86,8 @@ function extractGmailRequest(text) {
 
 function isReadOnlyResearchRequest(text = "") {
   const value = clean(text);
-  const researchIntent = /\\b(research|investigate|look up|search the web|browse|latest|recent|current|today|news|developments|verify|fact-check|compare)\\b/i.test(value);
-  const sideEffectIntent = /\\b(send|email|book|reserve|order|buy|purchase|pay|transfer|delete|forget|remember|call|message|submit|cancel|checkout|place the order|connect|change my|update my)\\b/i.test(value);
+  const researchIntent = /\b(research|investigate|look up|search the web|browse|latest|recent|current|today|news|developments|verify|fact-check|compare)\b/i.test(value);
+  const sideEffectIntent = /\b(send|email|book|reserve|order|buy|purchase|pay|transfer|delete|forget|remember|call|message|submit|cancel|checkout|place the order|connect|change my|update my)\b/i.test(value);
   return researchIntent && !sideEffectIntent;
 }
 
