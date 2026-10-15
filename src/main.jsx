@@ -317,6 +317,9 @@ function escapeHtml(value) {
 function formatInlineMarkdown(value) {
   let html = escapeHtml(value);
   html = html
+    // Never leak Markdown heading markers when model output mixes a heading
+    // and its explanatory sentence on the same line.
+    .replace(/(^|\s)#{1,6}\s+/g, "$1")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
     .replace(/(^|\s)(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noreferrer">$2</a>')
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
@@ -331,7 +334,8 @@ function AssistantMessage({ text }) {
   const normalized = raw
     .replace(/\s+(#{1,3}\s+)/g, "\n\n$1")
     .replace(/\s+((?:[-*•]|\d+\.)\s+)/g, "\n$1")
-    .replace(/\n\s+/g, "\n")
+    // Trim indentation only. Using \s+ here also eats the blank lines above.
+    .replace(/\n[ \t]+/g, "\n")
     .replace(/\n{3,}/g, "\n\n");
 
   const blocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
@@ -342,7 +346,7 @@ function AssistantMessage({ text }) {
       {blocks.map((block, index) => {
         const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
 
-        if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
+        if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0]) && lines[0].length <= 120) {
           const content = lines[0].replace(/^#{1,3}\s+/, "");
           return <h4 key={index} dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(content) }} />;
         }
