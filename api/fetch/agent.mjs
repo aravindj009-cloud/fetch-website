@@ -1519,10 +1519,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // Any request that needs persisted profile, connector, partner-directory,
-    // or workflow data must not fall through to a raw missing-secret error in
-    // a preview environment. Research has already had its stateless branch
-    // above; everything else waits for a properly configured staging DB.
+    // Read-only research returned above without requiring database persistence.
+    // DB-backed profile, connector, partner-directory, memory and workflow tasks
+    // must fail with a safe preview message rather than a raw missing-secret error.
     if (!SUPABASE_KEY) {
       return json(res, 503, {
         success: false,
