@@ -1519,6 +1519,25 @@ export default async function handler(req, res) {
       });
     }
 
+    // Any request that needs persisted profile, connector, partner-directory,
+    // or workflow data must not fall through to a raw missing-secret error in
+    // a preview environment. Research has already had its stateless branch
+    // above; everything else waits for a properly configured staging DB.
+    if (!SUPABASE_KEY) {
+      return json(res, 503, {
+        success: false,
+        status: "preview_database_not_configured",
+        message: "This Fetch preview is not connected to its partner/profile database, so I can't safely search the partner directory or run connector actions here. Read-only research can still work. Configure a dedicated staging Supabase environment to test partner discovery; no booking or external action was performed.",
+        execution: {
+          success: false,
+          status: "preview_database_not_configured",
+          execution_type: "environment_guard",
+          side_effect: false,
+          confirmation_required: false
+        }
+      });
+    }
+
     const customer = await getOrCreateWebCustomer(resolvedConversationId);
     const memories = await getCustomerMemories(customer?.id);
 
