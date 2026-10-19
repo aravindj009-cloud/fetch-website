@@ -84,6 +84,13 @@ function extractGmailRequest(text) {
   };
 }
 
+function isReadOnlyResearchRequest(text = "") {
+  const value = clean(text);
+  const researchIntent = /\b(research|investigate|look up|search the web|browse|latest|recent|current|today|news|developments|verify|fact-check|compare)\b/i.test(value);
+  const sideEffectIntent = /\b(send|email|book|reserve|order|buy|purchase|pay|transfer|delete|forget|remember|call|message|submit|cancel|checkout|place the order|connect|change my|update my)\b/i.test(value);
+  return researchIntent && !sideEffectIntent;
+}
+
 function isExecutionRequest(universal) {
   const domain = clean(universal?.fetch?.decisions?.[0]?.intent?.domain);
   return [
@@ -1437,6 +1444,96 @@ export default async function handler(req, res) {
       return json(res, 400, {
         success: false,
         error: "text is required"
+      });
+    }
+
+    /*
+     * Stateless degraded mode for read-only research when this deployment
+     * has no Supabase secret configured. Research does not need a customer
+     * row or memory persistence just to answer a question. Keep provider
+     * actions and physical orders on the normal DB-backed path.
+     */
+    if (!SUPABASE_KEY && isReadOnlyResearchRequest(text)) {
+      const answer = await answerFetchConversation({
+        text,
+        history: Array.isArray(body.history) ? body.history : [],
+        activeTask
+      });
+
+      if (!clean(answer)) {
+        return json(res, 503, {
+          success: false,
+          status: "research_unavailable",
+          message: "Fetch could not access its research service in this preview. The request was not saved; please retry after the preview AI connection is configured.",
+          execution: {
+            success: false,
+            status: "research_unavailable",
+            execution_type: "read_only_web_research",
+            side_effect: false
+          }
+        });
+      }
+
+      const statelessTask = {
+        ...(activeTask || {}),
+        objective: activeTask?.objective || text,
+        latestText: text,
+        text,
+        domain: "research",
+        stage: "completed",
+        status: "completed",
+        network: "web_search",
+        workflowId: null,
+        lastResponse: answer,
+        updatedAt: new Date().toISOString()
+      };
+
+      return json(res, 200, {
+        success: true,
+        status: "completed",
+        workflow_id: null,
+        message: answer,
+        active_task: statelessTask,
+        fetch: {
+          intent: { domain: "research", confidence: 1 },
+          plan: ["Search current sources", "Summarize evidence and uncertainty"]
+        },
+        atc: {
+          status: "not_required",
+          network: "web_search",
+          resource_type: "read_only_research",
+          reason: "No external side effect; no database persistence required"
+        },
+        execution: {
+          success: true,
+          status: "completed",
+          message: "Research answered without database persistence.",
+          execution_type: "read_only_web_research",
+          side_effect: false,
+          confirmation_required: false
+        },
+        persistence: {
+          saved: false,
+          reason: "SUPABASE_SECRET_KEY is not configured in this deployment"
+        }
+      });
+    }
+
+    // Read-only research returned above without requiring database persistence.
+    // DB-backed profile, connector, partner-directory, memory and workflow tasks
+    // must fail with a safe preview message rather than a raw missing-secret error.
+    if (!SUPABASE_KEY) {
+      return json(res, 503, {
+        success: false,
+        status: "preview_database_not_configured",
+        message: "This Fetch preview is not connected to its partner/profile database, so I can't safely search the partner directory or run connector actions here. Read-only research can still work. Configure a dedicated staging Supabase environment to test partner discovery; no booking or external action was performed.",
+        execution: {
+          success: false,
+          status: "preview_database_not_configured",
+          execution_type: "environment_guard",
+          side_effect: false,
+          confirmation_required: false
+        }
       });
     }
 
