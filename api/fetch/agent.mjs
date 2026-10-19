@@ -877,7 +877,7 @@ export default async function handler(req, res) {
 
     const text = clean(body.text);
     const resolvedConversationId = conversationId || `web:${Date.now()}`;
-    const activeTask = body.activeTask && typeof body.activeTask === "object"
+    let activeTask = body.activeTask && typeof body.activeTask === "object"
       ? body.activeTask
       : null;
 
@@ -940,6 +940,7 @@ export default async function handler(req, res) {
         },
         updatedAt: new Date().toISOString()
       };
+      activeTask = gmailTask;
     }
 
     // Continue a live Instamart task directly when the user has selected
